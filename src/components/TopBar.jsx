@@ -2,9 +2,9 @@ import { GroxvelLogo } from "@/components/GroxvelLogo";
 import { LogOut } from "lucide-react";
 
 export default function TopBar({ operator, onLogout }) {
-  const initials = (operator?.fullName || "U")
+  const initials = (operator?.full_name || "U")
     .split(" ").slice(0, 2).map((s) => s[0]?.toUpperCase()).join("");
-  const firstName = (operator?.fullName || "Operator").split(" ")[0];
+  const fullName = operator?.full_name || "Operator";
 
   return (
     <div className="sticky top-0 z-20 bg-[#080F0B]/85 backdrop-blur-lg">
@@ -20,7 +20,7 @@ export default function TopBar({ operator, onLogout }) {
             >
               {initials}
             </div>
-            <div className="text-sm text-white font-medium max-w-[100px] truncate">{firstName}</div>
+            <div className="text-sm text-white font-medium max-w-[120px] truncate">{fullName}</div>
           </div>
           <button
             onClick={onLogout}

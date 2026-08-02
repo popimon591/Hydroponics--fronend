@@ -1,46 +1,68 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+
 import "@/App.css";
-import { Toaster } from "sonner";
-import Splash from "@/pages/Splash";
-import Auth from "@/pages/Auth";
-import TopBar from "@/components/TopBar";
 import BottomNav from "@/components/BottomNav";
-import Home from "@/pages/Home";
+import TopBar from "@/components/TopBar";
+import Auth from "@/pages/Auth";
 import DevicesDashboard from "@/pages/DevicesDashboard";
+import Home from "@/pages/Home";
 import Readings from "@/pages/Readings";
+import Splash from "@/pages/Splash";
+import { Toaster } from "sonner";
+
+import { clearSession, getSessionUser, hasSession } from "@/lib/storage";
+import { useMobile } from "@/lib/useMobile";
 
 export default function App() {
   const [phase, setPhase] = useState("splash");
-  const [operator, setOperator] = useState(() => {
-    try {
-      const raw = localStorage.getItem("groxvel_session");
-      if (!raw) return null;
-      const s = JSON.parse(raw);
-      if (s?.expiresAt > Date.now()) return s.operator;
-      localStorage.removeItem("groxvel_session");
-    } catch (err) {
-      console.error("Failed to restore session:", err);
-    }
-    return null;
-  });
-  const [tab, setTab] = useState("home");            // home | device
-  const [view, setView] = useState("index");         // index | readings
+  const [operator, setOperator] = useState(() => getSessionUser());
+  const [tab, setTab] = useState("home");
+  const [view, setView] = useState("index");
   const [activeDevice, setActiveDevice] = useState(null);
 
-  const onSplashDone = () => setPhase(operator ? "app" : "auth");
+  // appReady becomes true once we have moved past splash into the real UI
+  const [appReady, setAppReady] = useState(false);
 
-  const onAuthed = (op) => {
-    const session = { operator: op, expiresAt: Date.now() + 1000*60*60*24*30 };
-    localStorage.setItem("groxvel_session", JSON.stringify(session));
-    setOperator(op);
+  // pollResumeKey: incrementing this tells child pages to re-fetch immediately
+  const [pollResumeKey, setPollResumeKey] = useState(0);
+
+  // ── Capacitor mobile lifecycle ──────────────────────────────────────────
+  const onResume = useCallback(() => {
+    // App returned to foreground → nudge sensor pages to refresh
+    setPollResumeKey((k) => k + 1);
+  }, []);
+
+  const onPause = useCallback(() => {
+    // App went to background — child pages handle their own polling via
+    // pollResumeKey; nothing to do here at top level
+  }, []);
+
+  useMobile({ onResume, onPause, appReady });
+
+  // ── Session restore on mount ────────────────────────────────────────────
+  useEffect(() => {
+    setOperator(getSessionUser());
+  }, []);
+
+  // ── Phase transitions ───────────────────────────────────────────────────
+  const onSplashDone = () => {
+    setPhase(hasSession() ? "app" : "auth");
+    // Signal useMobile to hide the native splash screen
+    setAppReady(true);
+  };
+
+  const onAuthed = (user) => {
+    setOperator(user);
     setPhase("app");
+    setAppReady(true);
   };
 
   const onLogout = () => {
-    localStorage.removeItem("groxvel_session");
+    clearSession();
     setOperator(null);
     setActiveDevice(null);
-    setTab("home"); setView("index");
+    setTab("home");
+    setView("index");
     setPhase("auth");
   };
 
@@ -49,8 +71,8 @@ export default function App() {
     setView("readings");
   };
 
-  const changeTab = (t) => {
-    setTab(t);
+  const changeTab = (nextTab) => {
+    setTab(nextTab);
     setView("index");
   };
 
@@ -70,15 +92,27 @@ export default function App() {
       />
 
       {phase === "splash" && <Splash onDone={onSplashDone} />}
-      {phase === "auth"   && <Auth onAuthed={onAuthed} />}
+      {phase === "auth" && <Auth onAuthed={onAuthed} />}
       {phase === "app" && operator && (
         <>
           <TopBar operator={operator} onLogout={onLogout} />
-          {view === "readings"
-            ? <Readings deviceId={activeDevice} onBack={() => setView("index")} />
-            : tab === "home"
-              ? <Home onOpenDevice={openDevice} />
-              : <DevicesDashboard onOpenDevice={openDevice} />}
+          {view === "readings" ? (
+            <Readings
+              deviceId={activeDevice}
+              onBack={() => setView("index")}
+              pollResumeKey={pollResumeKey}
+            />
+          ) : tab === "home" ? (
+            <Home
+              onOpenDevice={openDevice}
+              pollResumeKey={pollResumeKey}
+            />
+          ) : (
+            <DevicesDashboard
+              onOpenDevice={openDevice}
+              pollResumeKey={pollResumeKey}
+            />
+          )}
           <BottomNav active={tab} onChange={changeTab} />
         </>
       )}

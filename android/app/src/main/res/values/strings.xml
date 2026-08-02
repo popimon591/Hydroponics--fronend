@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Groxvel</string>
+    <string name="title_activity_main">Groxvel</string>
+    <string name="package_name">com.groxvel.agriculture</string>
+    <string name="custom_url_scheme">com.groxvel.agriculture</string>
+</resources>

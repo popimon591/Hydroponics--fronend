@@ -1,0 +1,32 @@
+{
+  "appId": "com.groxvel.agriculture",
+  "appName": "Groxvel",
+  "webDir": "build",
+  "android": {
+    "allowMixedContent": true,
+    "backgroundColor": "#080F0B"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 2000,
+      "launchAutoHide": false,
+      "backgroundColor": "#080F0B",
+      "androidSplashResourceName": "splash",
+      "androidScaleType": "CENTER_CROP",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true,
+      "fadeInDuration": 200,
+      "fadeOutDuration": 300
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#080F0B",
+      "overlaysWebView": false
+    },
+    "Keyboard": {
+      "resize": "body",
+      "resizeOnFullScreen": true
+    }
+  }
+}

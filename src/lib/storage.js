@@ -1,9 +1,13 @@
-// Shared localStorage helpers with proper error logging (used across pages)
+﻿// Shared localStorage helpers with proper error logging.
 
 export const LS_KEYS = {
-  DEVICES:  "groxvel_devices_v4",
+  DEVICES: "groxvel_devices_v4",
+  DEVICE_META: "groxvel_device_meta_v1",
   READINGS: "groxvel_readings_v4",
-  ALARMS:   "groxvel_alarms_v4",
+  ALARMS: "groxvel_alarms_v4",
+  ACCESS_TOKEN: "groxvel_access_token",
+  REFRESH_TOKEN: "groxvel_refresh_token",
+  SESSION_USER: "groxvel_session_user",
 };
 
 export const readJSON = (key, fallback = null) => {
@@ -23,3 +27,41 @@ export const writeJSON = (key, value) => {
     console.error(`Failed to write localStorage key "${key}":`, err);
   }
 };
+
+export const removeKey = (key) => {
+  try {
+    localStorage.removeItem(key);
+  } catch (err) {
+    console.error(`Failed to remove localStorage key "${key}":`, err);
+  }
+};
+
+export const getAccessToken = () => localStorage.getItem(LS_KEYS.ACCESS_TOKEN) || "";
+export const getRefreshToken = () => localStorage.getItem(LS_KEYS.REFRESH_TOKEN) || "";
+export const getSessionUser = () => readJSON(LS_KEYS.SESSION_USER, null);
+export const getDeviceMeta = () => readJSON(LS_KEYS.DEVICE_META, {});
+
+export const saveTokens = ({ access, refresh }) => {
+  try {
+    if (access) localStorage.setItem(LS_KEYS.ACCESS_TOKEN, access);
+    if (refresh) localStorage.setItem(LS_KEYS.REFRESH_TOKEN, refresh);
+  } catch (err) {
+    console.error("Failed to save auth tokens:", err);
+  }
+};
+
+export const saveSessionUser = (user) => writeJSON(LS_KEYS.SESSION_USER, user);
+
+export const saveSession = ({ user, token }) => {
+  saveSessionUser(user || null);
+  saveTokens(token || {});
+};
+
+export const clearSession = () => {
+  removeKey(LS_KEYS.ACCESS_TOKEN);
+  removeKey(LS_KEYS.REFRESH_TOKEN);
+  removeKey(LS_KEYS.SESSION_USER);
+};
+
+export const hasSession = () => Boolean(getRefreshToken() && getSessionUser());
+
