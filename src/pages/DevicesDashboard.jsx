@@ -2,7 +2,7 @@
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, Wifi, WifiOff, AlertTriangle, ChevronRight, X } from "lucide-react";
-import { createFrontendDevice, DEFAULT_ALARMS, fetchFleetState, hasValue, timeAgoShort } from "@/lib/telemetry";
+import { createFrontendDevice, fetchFleetState, hasValue, timeAgoShort, sensorApi } from "@/lib/telemetry";
 import { LS_KEYS, readJSON, writeJSON } from "@/lib/storage";
 
 const StatusPill = ({ online }) => {
@@ -39,11 +39,54 @@ const DeviceListItem = memo(function DeviceListItem({ device, readings, onOpen }
   );
 });
 
-const alarmStyles = (critical) => (critical ? { pill: { color: "#E36361", background: "rgba(227,99,97,0.12)" }, iconBg: { background: "rgba(227,99,97,0.18)" }, iconColor: "#E36361", surface: { borderColor: "rgba(227,99,97,0.3)", background: "linear-gradient(180deg, rgba(227,99,97,0.10), rgba(227,99,97,0.02))" } } : { pill: { color: "#E5B23B", background: "rgba(229,178,59,0.12)" }, iconBg: { background: "rgba(229,178,59,0.18)" }, iconColor: "#E5B23B", surface: { borderColor: "rgba(229,178,59,0.25)", background: "linear-gradient(180deg, rgba(229,178,59,0.08), rgba(229,178,59,0.02))" } });
+const alarmStyles = (severity) => {
+  const isCritical = severity === "MAX" || severity === "MIN";
+  return isCritical
+    ? {
+        pill: { color: "#E36361", background: "rgba(227,99,97,0.12)" },
+        iconBg: { background: "rgba(227,99,97,0.18)" },
+        iconColor: "#E36361",
+        surface: {
+          borderColor: "rgba(227,99,97,0.3)",
+          background: "linear-gradient(180deg, rgba(227,99,97,0.10), rgba(227,99,97,0.02))",
+        },
+        label: "CRITICAL",
+      }
+    : {
+        pill: { color: "#E5B23B", background: "rgba(229,178,59,0.12)" },
+        iconBg: { background: "rgba(229,178,59,0.18)" },
+        iconColor: "#E5B23B",
+        surface: {
+          borderColor: "rgba(229,178,59,0.25)",
+          background: "linear-gradient(180deg, rgba(229,178,59,0.08), rgba(229,178,59,0.02))",
+        },
+        label: "WARNING",
+      };
+};
 
 const AlarmItem = ({ alarm, onDismiss }) => {
-  const s = alarmStyles(alarm.severity === "CRITICAL");
-  return <div className="surface p-4 flex items-start gap-3" style={s.surface} data-testid={`alarm-${alarm.id}`}><div className="h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0" style={s.iconBg}><AlertTriangle className="h-4 w-4" style={{ color: s.iconColor }} /></div><div className="flex-1 min-w-0"><div className="flex items-center gap-2 flex-wrap"><span className="pill" style={s.pill}>{alarm.severity}</span><span className="text-white font-semibold text-sm">{alarm.device}</span></div><div className="text-[13px] text-white mt-2"><span className="text-white/50">{alarm.trigger}:</span> {alarm.critical}</div><div className="text-xs text-white/50 mt-1 leading-relaxed">{alarm.description}</div><div className="text-[11px] text-white/30 mt-2">{timeAgoShort(alarm.at)}</div></div><button onClick={() => onDismiss(alarm.id)} className="text-white/30 hover:text-white transition-colors" aria-label="Dismiss" data-testid={`dismiss-${alarm.id}`}><X className="h-4 w-4" /></button></div>;
+  const s = alarmStyles(alarm.level);
+  return (
+    <div className="surface p-4 flex items-start gap-3" style={s.surface} data-testid={`alarm-${alarm.id}`}>
+      <div className="h-10 w-10 rounded-xl flex items-center justify-center flex-shrink-0" style={s.iconBg}>
+        <AlertTriangle className="h-4 w-4" style={{ color: s.iconColor }} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="pill" style={s.pill}>{s.label}</span>
+          <span className="text-white font-semibold text-sm">{alarm.device_name}</span>
+        </div>
+        <div className="text-[13px] text-white mt-2">
+          <span className="text-white/50">{alarm.parameter}:</span> {alarm.value}
+        </div>
+        <div className="text-xs text-white/50 mt-1 leading-relaxed">{alarm.message}</div>
+        <div className="text-[11px] text-white/30 mt-2">{timeAgoShort(alarm.at)}</div>
+      </div>
+      <button onClick={() => onDismiss(alarm.id)} className="text-white/30 hover:text-white transition-colors" aria-label="Dismiss" data-testid={`dismiss-${alarm.id}`}>
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
 };
 
 const EmptyAlarms = () => <div className="surface p-8 text-center"><div className="text-white/60">All systems nominal</div><div className="text-xs text-white/30 mt-1">No active environmental warnings</div></div>;
@@ -69,7 +112,7 @@ const AddDeviceSheet = ({ onClose, onSubmit, submitting }) => {
 export default function DevicesDashboard({ onOpenDevice }) {
   const [tab, setTab] = useState("list");
   const [devices, setDevices] = useState(() => readJSON(LS_KEYS.DEVICES, []));
-  const [alarms, setAlarms] = useState(() => readJSON(LS_KEYS.ALARMS, DEFAULT_ALARMS));
+  const [alarms, setAlarms] = useState(() => readJSON(LS_KEYS.ALARMS, []));
   const [readings, setReadings] = useState(() => readJSON(LS_KEYS.READINGS, {}));
   const [addOpen, setAddOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -78,9 +121,24 @@ export default function DevicesDashboard({ onOpenDevice }) {
     const snapshot = await fetchFleetState();
     setDevices(snapshot.devices);
     setReadings(snapshot.readingsMap);
+
+    try {
+      const alarmResponse = await sensorApi.getActiveAlarms();
+      if (alarmResponse.success) {
+        setAlarms(alarmResponse.data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch alarms:", err);
+    }
   }, []);
 
   useEffect(() => { loadFleet().catch((error) => console.error("Failed to load devices dashboard:", error)); }, [loadFleet]);
+  useEffect(() => {
+    const timer = setInterval(() => {
+      loadFleet().catch((error) => console.error("Failed to refresh devices dashboard:", error));
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [loadFleet]);
   useEffect(() => { writeJSON(LS_KEYS.DEVICES, devices); }, [devices]);
   useEffect(() => { writeJSON(LS_KEYS.ALARMS, alarms); }, [alarms]);
   useEffect(() => { writeJSON(LS_KEYS.READINGS, readings); }, [readings]);

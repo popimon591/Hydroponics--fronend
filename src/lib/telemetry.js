@@ -124,6 +124,14 @@ export const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
+  if (config.skipAuth) {
+    if (config.headers) {
+      delete config.headers.Authorization;
+      delete config.headers.authorization;
+    }
+    return config;
+  }
+
   const access = getAccessToken();
   if (access) {
     config.headers = config.headers || {};
@@ -146,7 +154,7 @@ apiClient.interceptors.response.use(
     const status = error?.response?.status;
     const originalRequest = error?.config || {};
     const isRefreshRequest = String(originalRequest?.url || "").includes("/user/token/refresh");
-    if (status !== 401 || originalRequest._retry || isRefreshRequest) {
+    if (status !== 401 || originalRequest._retry || isRefreshRequest || originalRequest.skipAuth) {
       return Promise.reject(error);
     }
 
@@ -172,9 +180,14 @@ const extractMessage = (error, fallback) => {
   if (data?.detail) return data.detail;
   if (data?.errors) {
     const firstKey = Object.keys(data.errors)[0];
-    if (firstKey && data.errors[firstKey]?.length) return data.errors[firstKey][0];
+    const firstError = firstKey ? data.errors[firstKey] : null;
+    if (Array.isArray(firstError) && firstError.length) return firstError[0];
+    if (typeof firstError === "string") return firstError;
   }
   if (data?.error) return data.error;
+  if (!error?.response) {
+    return "Cannot reach Hydro. Check that the server is running and your device is connected to the same network.";
+  }
   return fallback || error.message || "Something went wrong.";
 };
 
@@ -219,15 +232,23 @@ export const persistDeviceMeta = (deviceId, metaUpdate) => {
 export const authApi = {
   async sendRegisterOtp(fullName, phoneNumber) {
     try {
-      const response = await apiClient.post("/user/register/send-otp", { full_name: fullName, phone_number: phoneNumber });
+      const response = await apiClient.post(
+        "user/register/send-otp",
+        { full_name: fullName, phone_number: phoneNumber },
+        { skipAuth: true }
+      );
       return response.data;
     } catch (error) {
       throw new Error(extractMessage(error, "Failed to send registration OTP."));
     }
   },
-  async verifyRegisterOtp(phoneNumber, otp) {
+  async verifyRegisterOtp(fullName, phoneNumber, firebaseIdToken) {
     try {
-      const response = await apiClient.post("/user/register/verify-otp", { phone_number: phoneNumber, otp });
+      const response = await apiClient.post("user/register/verify-otp", {
+        full_name: fullName,
+        phone_number: phoneNumber,
+        firebase_id_token: firebaseIdToken,
+      }, { skipAuth: true });
       saveSession(response.data.data);
       return response.data;
     } catch (error) {
@@ -236,15 +257,22 @@ export const authApi = {
   },
   async sendLoginOtp(phoneNumber) {
     try {
-      const response = await apiClient.post("/user/login/send-otp", { phone_number: phoneNumber });
+      const response = await apiClient.post(
+        "user/login/send-otp",
+        { phone_number: phoneNumber },
+        { skipAuth: true }
+      );
       return response.data;
     } catch (error) {
       throw new Error(extractMessage(error, "Failed to send login OTP."));
     }
   },
-  async verifyLoginOtp(phoneNumber, otp) {
+  async verifyLoginOtp(phoneNumber, firebaseIdToken) {
     try {
-      const response = await apiClient.post("/user/login/verify-otp", { phone_number: phoneNumber, otp });
+      const response = await apiClient.post("user/login/verify-otp", {
+        phone_number: phoneNumber,
+        firebase_id_token: firebaseIdToken,
+      }, { skipAuth: true });
       saveSession(response.data.data);
       return response.data;
     } catch (error) {
@@ -255,15 +283,15 @@ export const authApi = {
 
 export const sensorApi = {
   async getHome() {
-    const response = await apiClient.get("/sensor/home/");
+    const response = await apiClient.get("sensor/home/");
     return response.data;
   },
   async listDevices() {
-    const response = await apiClient.get("/sensor/devices/");
+    const response = await apiClient.get("sensor/devices/");
     return response.data;
   },
   async createDevice(payload) {
-    const response = await apiClient.post("/sensor/devices/", payload);
+    const response = await apiClient.post("sensor/devices/", payload);
     return response.data;
   },
   async getLiveReading(deviceId, { force = false } = {}) {
@@ -272,10 +300,22 @@ export const sensorApi = {
     if (!force && cached && Date.now() - cached.at < LIVE_CACHE_TTL) {
       return cached.value;
     }
-    const response = await apiClient.get(`/sensor/devices/${deviceId}/live/`);
-    const value = normalizeReadingPayload(response.data);
+    const response = await apiClient.get(`sensor/devices/${deviceId}/live/`);
+    const value = normalizeReadingPayload(response.data.data || response.data);
     liveCache.set(cacheKey, { at: Date.now(), value });
     return value;
+  },
+  async getActiveAlarms() {
+    const response = await apiClient.get("sensor/alarms/warning/");
+    return response.data;
+  },
+  async getSensorHistory(deviceId, hours = 24) {
+    const response = await apiClient.get(`sensor/history/${deviceId}/`, { params: { hours } });
+    return response.data;
+  },
+  async getDailySummary(deviceId) {
+    const response = await apiClient.get(`sensor/daily-summary/${deviceId}/`);
+    return response.data;
   },
 };
 
@@ -334,4 +374,3 @@ export const fetchDeviceLiveState = async (device) => {
     };
   }
 };
-

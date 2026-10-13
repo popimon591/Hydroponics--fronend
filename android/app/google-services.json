@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "750505557021",
+    "project_id": "agromonitoringapp",
+    "storage_bucket": "agromonitoringapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:750505557021:android:c9137cf8f3c53d7cafdaf4",
+        "android_client_info": {
+          "package_name": "com.groxvel.agriculture"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCJn7-q6IeaNAXAgdl9yKB4THS0ixIWZog"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -7,6 +7,9 @@
     "backgroundColor": "#080F0B"
   },
   "plugins": {
+    "FirebaseAuthentication": {
+      "providers": ["phone"]
+    },
     "SplashScreen": {
       "launchShowDuration": 2000,
       "launchAutoHide": false,

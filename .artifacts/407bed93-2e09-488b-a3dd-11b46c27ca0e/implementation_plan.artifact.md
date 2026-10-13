@@ -1,45 +1,41 @@
-# Implementation Plan - Final Project Cleanup for Git & Deployment
+# Implementation Plan - Smart Alerts & Summary Parameters
 
-This plan prepares the project for a clean `git push` and professional code review while maintaining your ability to test locally.
+This plan addresses the flickering issue, adds real-time notifications for alarms, and exposes "Daily Light Hours" and "DLI" as summary parameters in the UI.
 
 ## User Review Required
 
-> [!IMPORTANT]
-> **Environment Variables**: I have ensured that sensitive keys are kept in `.env` files which will be ignored by Git. You will need to provide these variables manually when deploying to a real server.
-> **Git Cleanup**: I will be updating your `.gitignore` files to ensure that IDE settings, temporary logs, and build artifacts are not pushed to your repository.
+> [!TIP]
+> **Silent Updates**: I will change the app to refresh numbers in the background without any flickering or loading spinners.
+> **Summary Parameters**: I will add "Daily Light Hours" and "DLI" to your device dashboard. These will show you how much light your plants have received throughout the day.
+> **Notifications**: A popup will appear at the top of your screen as soon as a new critical alarm is detected.
 
 ## Proposed Changes
 
-### 1. Repository Hygiene
+### 1. Frontend: Expose Summary Parameters
+#### [MODIFY] [telemetry.js](file:///D:/siya-projects/Hydro-Project2/Hydroponics--fronend/src/lib/telemetry.js)
+- Add `daily_light_hours` and `daily_dli` to the `ATTRIBUTES` array.
+- Assign appropriate units (`hrs` and `mol/m²/d`) and target ranges for these summaries.
 
-#### [MODIFY] [Frontend .gitignore](file:///D:/siya-projects/Hydro-Project2/Hydroponics--fronend/.gitignore)
-- Add `.artifacts/`
-- Add `.idea/`
-- Add `.env` (Standard practice for deployment)
-- Add `package-lock.json` (Since you are using Yarn)
+### 2. Frontend: Fix Flickering (Silent Refresh)
+#### [MODIFY] [Readings.jsx](file:///D:/siya-projects/Hydro-Project2/Hydroponics--fronend/src/pages/Readings.jsx)
+- Modify `loadReadings` to be "silent" during automatic intervals.
+- The user will only see a loading state on the very first visit to the page.
 
-#### [MODIFY] [Backend .gitignore](file:///D:/siya-projects/Hydro-Project2/Hydro-Project/.gitignore)
-- Add `.artifacts/`
-- Add `.idea/`
-- Add `*.log`
-- Add `.env.example` to the *allowed* list (ensuring it is pushed)
+#### [MODIFY] [DevicesDashboard.jsx](file:///D:/siya-projects/Hydro-Project2/Hydroponics--fronend/src/pages/DevicesDashboard.jsx)
+- Implement silent background polling for the device list and alarms.
 
-### 2. Project Standardization
-
-#### [DELETE] [Backend package-lock.json](file:///D:/siya-projects/Hydro-Project2/Hydro-Project/package-lock.json)
-- Remove this file as it is a leftover and not used by the Python backend.
-
-#### [MODIFY] [.env.example](file:///D:/siya-projects/Hydro-Project2/Hydro-Project/.env.example)
-- Ensure it contains all necessary keys for a new developer to get started without leaking your actual secrets.
-
-### 3. Deployment Readiness
-- Ensure all backend views used by the mobile app are fully implemented and follow the standard `{"success": true, "data": ...}` response pattern.
+### 3. Frontend: Real-Time Alarm Notifications
+#### [MODIFY] [DevicesDashboard.jsx](file:///D:/siya-projects/Hydro-Project2/Hydroponics--fronend/src/pages/DevicesDashboard.jsx)
+- Compare current alarms with previous ones in each poll.
+- Trigger a `toast.error()` or `toast.warning()` when a new alarm is found.
 
 ## Verification Plan
 
 ### Automated Tests
-- Run `git status` (mentally or via tool) to verify ignored files are not being tracked.
-- Run `python manage.py check` to ensure no environment configuration errors.
+- Verify that `ATTRIBUTES` contains the new summary keys.
+- Ensure polling logic does not reset the `refreshing` state to true.
 
 ### Manual Verification
-- I will provide a final "Deployment Checklist" for your code review.
+- **Visual Check**: Verify "Daily Light Hours" appears in the sensor grid for a device.
+- **Refresh Check**: Verify the app updates numbers every 30 seconds without the screen flickering.
+- **Notification Check**: Simulate an alarm and verify the popup appears instantly.

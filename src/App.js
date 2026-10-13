@@ -77,7 +77,7 @@ export default function App() {
   };
 
   return (
-    <div className="App min-h-screen">
+    <div className={phase === "auth" ? "App h-[100dvh] min-h-0 overflow-hidden" : "App min-h-screen"}>
       <Toaster
         position="top-center"
         theme="dark"

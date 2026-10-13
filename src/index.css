@@ -29,7 +29,7 @@
   }
 }
 
-html, body, #root { background: #080F0B; color: #ffffff; min-height: 100%; }
+html, body, #root { background: #080F0B; color: #ffffff; min-height: 100%; height: 100%; }
 
 body {
   margin: 0;
@@ -39,6 +39,8 @@ body {
     radial-gradient(1200px 700px at 50% -20%, rgba(57,181,74,0.06), transparent 65%),
     #080F0B;
   background-attachment: fixed;
+  overscroll-behavior: none;
+  touch-action: manipulation;
 }
 
 .font-display { font-family: "Sora", "Plus Jakarta Sans", sans-serif; letter-spacing: -0.02em; }
