@@ -34,3 +34,7 @@ yarn-error.log*
 
 # Lockfiles (Using Yarn)
 package-lock.json
+
+# Claude Code (local tooling)
+.claude/
+CLAUDE.md
