@@ -38,3 +38,6 @@ package-lock.json
 # Claude Code (local tooling)
 .claude/
 CLAUDE.md
+
+# Local review notes
+docs/Groxvel-Mobile-UX-Issues.docx
