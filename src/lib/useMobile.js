@@ -20,6 +20,8 @@ import { SplashScreen } from "@capacitor/splash-screen";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { Capacitor } from "@capacitor/core";
 
+import { handleBack } from "@/lib/backHandler";
+
 const IS_NATIVE = Capacitor.isNativePlatform();
 
 /* ─── StatusBar ─────────────────────────────────────────────────────────── */
@@ -94,14 +96,14 @@ export function useMobile({ onResume, onPause, appReady = false } = {}) {
   }, [onResume, onPause]);
 
   // ── Hardware back button (Android) ────────────────────────────────────
-  // Prevent accidental app exit — only close if already at root
+  // Open overlays and sub-screens handle back first (see backHandler.js);
+  // at the root screen, minimize rather than kill the app.
   useEffect(() => {
     if (!IS_NATIVE) return;
 
     let listener;
-    CapApp.addListener("backButton", ({ canGoBack }) => {
-      if (!canGoBack) {
-        // At root — minimize rather than kill
+    CapApp.addListener("backButton", () => {
+      if (!handleBack()) {
         CapApp.minimizeApp();
       }
     }).then((l) => {

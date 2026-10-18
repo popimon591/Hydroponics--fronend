@@ -1,15 +1,15 @@
 import { Capacitor } from "@capacitor/core";
 import { FirebaseAuthentication } from "@capacitor-firebase/authentication";
 import { LoaderCircle } from "lucide-react";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { GroxvelLogo } from "@/components/GroxvelLogo";
 import { authApi } from "@/lib/telemetry";
 
-const Field = ({ label, children }) => (
+const Field = ({ label, htmlFor, children }) => (
   <div>
-    <label className="block text-[10px] uppercase tracking-[0.24em] text-white/40">{label}</label>
+    <label htmlFor={htmlFor} className="block text-[11px] uppercase tracking-[0.2em] text-white/60">{label}</label>
     <div className="mt-1">{children}</div>
   </div>
 );
@@ -20,7 +20,10 @@ const OtpDots = ({ value, onChange, disabled }) => {
   return (
     <div className="relative">
       <input
+        id="otp"
         inputMode="numeric"
+        autoComplete="one-time-code"
+        aria-label="6-digit verification code"
         maxLength={6}
         value={value}
         disabled={disabled}
@@ -33,9 +36,9 @@ const OtpDots = ({ value, onChange, disabled }) => {
           <div
             key={i}
             className="h-8 w-8 flex items-center justify-center border-b transition-colors"
-            style={{ borderColor: i <= filled ? "#39B54A" : "rgba(255,255,255,0.14)" }}
+            style={{ borderColor: i <= filled ? "#39B54A" : "rgba(255,255,255,0.2)" }}
           >
-            {i < filled ? <span className="text-white text-lg font-semibold">{digits[i]}</span> : <span className="h-1.5 w-1.5 rounded-full bg-white/25" />}
+            {i < filled ? <span className="text-white text-lg font-semibold">{digits[i]}</span> : <span className="h-1.5 w-1.5 rounded-full bg-white/35" />}
           </div>
         ))}
       </div>
@@ -44,7 +47,7 @@ const OtpDots = ({ value, onChange, disabled }) => {
 };
 
 const RegisterToggle = ({ showRegister, onToggle, disabled }) => (
-  <button onClick={onToggle} disabled={disabled} className="text-[12.5px] text-white/50 hover:text-white transition-colors disabled:opacity-50" data-testid="toggle-register">
+  <button onClick={onToggle} disabled={disabled} className="min-h-[44px] px-2 text-sm text-white/60 hover:text-white transition-colors disabled:opacity-50" data-testid="toggle-register">
     {showRegister ? (
       "Already have an account? Sign in"
     ) : (
@@ -55,12 +58,15 @@ const RegisterToggle = ({ showRegister, onToggle, disabled }) => (
   </button>
 );
 
+// digits = valid national number lengths, without the leading 0
 const COUNTRY_CODES = [
-  { code: "+91", label: "+91" },
-  { code: "+1", label: "+1" },
-  { code: "+44", label: "+44" },
-  { code: "+971", label: "+971" },
+  { code: "+91", label: "IN +91", digits: [10] },
+  { code: "+1", label: "US +1", digits: [10] },
+  { code: "+44", label: "UK +44", digits: [10] },
+  { code: "+971", label: "AE +971", digits: [9] },
 ];
+
+const RESEND_SECONDS = 30;
 
 const logAuthTiming = (operation, startedAt) => {
   if (process.env.NODE_ENV !== "production" || process.env.REACT_APP_AUTH_TIMINGS === "true") {
@@ -92,20 +98,32 @@ export default function Auth({ onAuthed }) {
 
   const title = useMemo(() => (showRegister ? "Create account" : "Sign in"), [showRegister]);
 
+  const [resendIn, setResendIn] = useState(0);
+  const phoneInputRef = useRef(null);
+
+  // Digits only, without a trunk-prefix 0 (e.g. "098765 43210" -> "9876543210").
+  const phoneDigits = useMemo(() => phone.replace(/\D/g, "").replace(/^0+/, ""), [phone]);
+
   const fullPhone = useMemo(() => {
     const code = countryCode.trim();
-    const num = phone.trim();
-    if (!num) return "";
-    return code.startsWith("+") ? `${code}${num}` : `+${code}${num}`;
-  }, [countryCode, phone]);
+    if (!phoneDigits) return "";
+    return code.startsWith("+") ? `${code}${phoneDigits}` : `+${code}${phoneDigits}`;
+  }, [countryCode, phoneDigits]);
+
+  useEffect(() => {
+    if (resendIn <= 0) return undefined;
+    const timer = setTimeout(() => setResendIn((value) => value - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendIn]);
 
   const validateFields = useCallback(() => {
-    if (!phone.trim()) {
+    if (!phoneDigits) {
       toast.error("Enter your phone number");
       return false;
     }
-    if (!countryCode.trim()) {
-      toast.error("Enter country code");
+    const country = COUNTRY_CODES.find((c) => c.code === countryCode);
+    if (country && !country.digits.includes(phoneDigits.length)) {
+      toast.error(`Enter a valid ${country.digits[0]}-digit phone number`);
       return false;
     }
     if (showRegister && !name.trim()) {
@@ -113,7 +131,7 @@ export default function Auth({ onAuthed }) {
       return false;
     }
     return true;
-  }, [name, phone, countryCode, showRegister]);
+  }, [name, phoneDigits, countryCode, showRegister]);
 
   const dispatchOTP = useCallback(async () => {
     if (sendInProgress.current || submitInProgress.current) return;
@@ -129,11 +147,17 @@ export default function Auth({ onAuthed }) {
     sendInProgress.current = true;
     setSending(true);
     try {
-      await measureAuthOperation("backend account preflight", () => (
-        showRegister
-          ? authApi.sendRegisterOtp(name.trim(), fullPhone)
-          : authApi.sendLoginOtp(fullPhone)
-      ));
+      try {
+        await measureAuthOperation("backend account preflight", () => (
+          showRegister
+            ? authApi.sendRegisterOtp(name.trim(), fullPhone)
+            : authApi.sendLoginOtp(fullPhone)
+        ));
+      } catch (backendError) {
+        // Backend messages are already user-friendly; Firebase ones are not.
+        backendError.isBackendError = true;
+        throw backendError;
+      }
 
       let resolveCodeSent;
       let rejectCodeSent;
@@ -159,7 +183,7 @@ export default function Auth({ onAuthed }) {
         try {
           const timeout = new Promise((_, reject) => {
             timeoutId = setTimeout(
-              () => reject(new Error("Timed out waiting for Firebase phone verification.")),
+              () => reject(new Error("Timed out waiting for the verification code.")),
               60000
             );
           });
@@ -176,13 +200,17 @@ export default function Auth({ onAuthed }) {
         }
         setVerificationId(receivedVerificationId);
         setOtpSent(true);
-        toast.success("Firebase sent the verification code.");
+        setOtp("");
+        setResendIn(RESEND_SECONDS);
+        toast.success(`Verification code sent to ${fullPhone}`);
       } finally {
         await Promise.all(listeners.map((listener) => listener.remove()));
       }
     } catch (error) {
+      // Firebase "app not authorized" failures usually mean the signing key's
+      // SHA-1 is missing in the Firebase console.
       console.error("Phone OTP request failed:", error);
-      toast.error(error.message || "Firebase could not send OTP. Verify SHA-1 in Firebase Console.", { duration: 6000 });
+      toast.error(error.isBackendError ? error.message : "We couldn't send the code. Check the number and try again.", { duration: 6000 });
     } finally {
       sendInProgress.current = false;
       setSending(false);
@@ -194,11 +222,11 @@ export default function Auth({ onAuthed }) {
     if (sendInProgress.current || submitInProgress.current) return;
     if (!validateFields()) return;
     if (!otpSent) {
-      toast.error("Request an OTP first");
+      toast.error("Request a verification code first");
       return;
     }
     if (otp.length !== 6) {
-      toast.error("Enter the 6-digit OTP");
+      toast.error("Enter the 6-digit code");
       return;
     }
     if (!verificationId) {
@@ -234,11 +262,11 @@ export default function Auth({ onAuthed }) {
     } catch (error) {
       const errorMessage = String(error?.code || error?.message || "");
       if (/invalid-verification-code|invalid.*verification code|verification code.*invalid|invalid code/i.test(errorMessage)) {
-        toast.error("Invalid OTP. Please check the code and try again.");
+        toast.error("That code is incorrect. Please check it and try again.");
       } else if (/session-expired|code-expired/i.test(errorMessage)) {
-        toast.error("This OTP has expired. Request a new code.");
+        toast.error("This code has expired. Request a new one.");
       } else {
-        toast.error(error.message || "Unable to verify the OTP.");
+        toast.error(error.message || "We couldn't verify the code. Please try again.");
       }
     } finally {
       submitInProgress.current = false;
@@ -251,10 +279,20 @@ export default function Auth({ onAuthed }) {
     setOtp("");
     setOtpSent(false);
     setVerificationId("");
+    setResendIn(0);
   };
 
+  const changeNumber = () => {
+    resetOtp();
+    requestAnimationFrame(() => phoneInputRef.current?.focus());
+  };
+
+  const busy = sending || submitting;
+  const canSubmit = otpSent && otp.length === 6 && !busy;
+  const sendLabel = otpSent ? (resendIn > 0 ? `Resend in ${resendIn}s` : "Resend code") : "Send code";
+
   return (
-    <div className="h-screen h-[100dvh] w-full flex flex-col items-center overflow-hidden px-6 select-none" style={{ background: "radial-gradient(700px 400px at 50% -10%, rgba(57,181,74,0.08), transparent 65%), #080F0B" }}>
+    <div className="h-screen h-[100dvh] w-full flex flex-col items-center overflow-hidden px-6 select-none" style={{ background: "radial-gradient(700px 400px at 50% -10%, rgba(57,181,74,0.08), transparent 65%), #080F0B", paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}>
       <div className="w-full flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
       <div className="min-h-full w-full max-w-sm mx-auto py-6 sm:py-8 fade-up flex flex-col justify-center">
         <div className="flex justify-center mb-6 sm:mb-8">
@@ -265,18 +303,19 @@ export default function Auth({ onAuthed }) {
 
         <div className="space-y-4 sm:space-y-5">
           {showRegister && (
-            <Field label="Full Name">
-              <input type="text" className="input-clean w-full" placeholder="Alex Brown" value={name} disabled={sending || submitting} onChange={(e) => setName(e.target.value)} data-testid="input-fullname" />
+            <Field label="Full Name" htmlFor="full-name">
+              <input id="full-name" type="text" autoComplete="name" className="input-clean w-full" placeholder="Alex Brown" value={name} disabled={busy || otpSent} onChange={(e) => setName(e.target.value)} data-testid="input-fullname" />
             </Field>
           )}
 
           <div className="grid grid-cols-[96px_minmax(0,1fr)] sm:grid-cols-[96px_minmax(0,1fr)_auto] gap-2.5 items-end">
-            <Field label="Code">
+            <Field label="Country" htmlFor="country-code">
               <div className="relative">
                 <select
-                  className="input-clean w-full h-10 bg-transparent text-white border-b border-white/14 focus:border-[#39B54A] transition-colors cursor-pointer appearance-none pl-3 pr-7 text-base font-semibold"
+                  id="country-code"
+                  className="input-clean w-full h-10 bg-transparent text-white border-b border-white/14 focus:border-[#39B54A] transition-colors cursor-pointer appearance-none pl-1 pr-6 text-sm font-semibold"
                   value={countryCode}
-                  disabled={sending || submitting}
+                  disabled={busy || otpSent}
                   onChange={(e) => { setCountryCode(e.target.value); resetOtp(); }}
                   data-testid="select-country-code"
                 >
@@ -286,30 +325,37 @@ export default function Auth({ onAuthed }) {
                     </option>
                   ))}
                 </select>
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-white/40 text-[12px]">▼</div>
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-white/60 text-[12px]" aria-hidden="true">▼</div>
               </div>
             </Field>
-            <Field label="Phone Number">
-              <input type="tel" className="input-clean w-full" placeholder="98765 43210" value={phone} disabled={sending || submitting} onChange={(e) => { setPhone(e.target.value); resetOtp(); }} data-testid="input-phone" />
+            <Field label="Phone Number" htmlFor="phone">
+              <input id="phone" ref={phoneInputRef} type="tel" inputMode="tel" autoComplete="tel-national" maxLength={16} className="input-clean w-full" placeholder="98765 43210" value={phone} disabled={busy || otpSent} onChange={(e) => { setPhone(e.target.value.replace(/[^\d\s-]/g, "")); resetOtp(); }} data-testid="input-phone" />
             </Field>
-            <button onClick={dispatchOTP} disabled={sending || submitting} className="col-span-2 sm:col-span-1 justify-self-end h-10 px-3.5 rounded-full bg-[#39B54A]/12 border border-[#39B54A]/40 text-[#39B54A] text-xs font-semibold hover:bg-[#39B54A]/20 transition-colors mb-0.5 disabled:opacity-50 whitespace-nowrap" data-testid="btn-dispatch-otp">
-              {sending ? <span className="flex items-center gap-1.5"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Sending...</span> : "Send OTP"}
+            <button onClick={dispatchOTP} disabled={busy || resendIn > 0} className="col-span-2 sm:col-span-1 justify-self-end h-11 px-4 rounded-full bg-[#39B54A]/12 border border-[#39B54A]/40 text-[#39B54A] text-sm font-semibold hover:bg-[#39B54A]/20 transition-colors mb-0.5 disabled:opacity-50 whitespace-nowrap" data-testid="btn-dispatch-otp">
+              {sending ? <span className="flex items-center gap-1.5"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Sending...</span> : sendLabel}
             </button>
           </div>
 
-          <Field label="OTP">
-            <OtpDots value={otp} onChange={setOtp} disabled={sending || submitting} />
+          {otpSent && (
+            <div className="flex items-center justify-between gap-3 text-sm text-white/70" data-testid="otp-sent-info">
+              <span className="min-w-0 truncate">Code sent to <span className="text-white font-medium">{fullPhone}</span></span>
+              <button onClick={changeNumber} disabled={busy} className="min-h-[44px] px-2 -mr-2 text-[#39B54A] font-semibold flex-shrink-0 disabled:opacity-50" data-testid="btn-change-number">Change number</button>
+            </div>
+          )}
+
+          <Field label="Verification Code" htmlFor="otp">
+            <OtpDots value={otp} onChange={setOtp} disabled={busy || !otpSent} />
           </Field>
         </div>
 
-        <button onClick={submit} disabled={sending || submitting} className="mt-6 sm:mt-8 w-full h-11 sm:h-12 rounded-full bg-[#39B54A] hover:bg-[#43C755] text-[#0B2214] font-semibold text-base transition-colors disabled:opacity-50" data-testid="btn-submit-auth">
+        <button onClick={submit} disabled={!canSubmit} className="mt-6 sm:mt-8 w-full h-11 sm:h-12 rounded-full bg-[#39B54A] hover:bg-[#43C755] text-[#0B2214] font-semibold text-base transition-colors disabled:opacity-50" data-testid="btn-submit-auth">
           {submitting ? <span className="flex items-center justify-center gap-2"><LoaderCircle className="h-4 w-4 animate-spin" />{showRegister ? "Creating Account..." : "Signing In..."}</span> : showRegister ? "Create Account" : "Sign In"}
         </button>
 
-        <p className="mt-3 text-center text-[11px] text-white/40">OTPs are rate-limited. Session persists via refresh token for around 2 months.</p>
+        <p className="mt-3 text-center text-xs text-white/60">You'll stay signed in on this phone.</p>
 
         <div className="mt-5 sm:mt-6 text-center">
-          <RegisterToggle showRegister={showRegister} onToggle={() => { setShowRegister((value) => !value); resetOtp(); }} disabled={sending || submitting} />
+          <RegisterToggle showRegister={showRegister} onToggle={() => { setShowRegister((value) => !value); resetOtp(); }} disabled={busy} />
         </div>
       </div>
       </div>

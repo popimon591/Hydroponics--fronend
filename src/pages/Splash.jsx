@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { GroxvelLogo } from "@/components/GroxvelLogo";
 
-const DURATION_MS = 3200; // total time on splash screen
+// Brief brand moment after the native launch screen hides; kept short so
+// launching the app feels fast.
+const DURATION_MS = 900;
 
 export default function Splash({ onDone }) {
   const [progress, setProgress] = useState(0);
@@ -19,7 +21,7 @@ export default function Splash({ onDone }) {
         finished.current = true;
         setLeaving(true);
         // let the fade-out play, then hand off
-        setTimeout(() => onDone?.(), 450);
+        setTimeout(() => onDone?.(), 300);
         return;
       }
       raf = requestAnimationFrame(tick);
@@ -32,7 +34,7 @@ export default function Splash({ onDone }) {
 
   return (
     <div
-      className={`fixed inset-0 z-50 flex flex-col items-center justify-center transition-opacity duration-500 ${leaving ? "opacity-0" : "opacity-100"}`}
+      className={`fixed inset-0 z-50 flex flex-col items-center justify-center transition-opacity duration-300 ${leaving ? "opacity-0" : "opacity-100"}`}
       style={{ background: "#080F0B" }}
       data-testid="splash-screen"
     >
@@ -56,9 +58,6 @@ export default function Splash({ onDone }) {
             }}
             data-testid="splash-progress-bar"
           />
-        </div>
-        <div className="mt-3 text-center text-[10px] tracking-[0.32em] uppercase text-white/40" data-testid="splash-progress-text">
-          {Math.floor(progress)}%
         </div>
       </div>
     </div>

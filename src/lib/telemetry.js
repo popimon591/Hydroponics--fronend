@@ -1,4 +1,4 @@
-﻿import axios from "axios";
+import axios from "axios";
 
 import {
   LS_KEYS,
@@ -52,6 +52,13 @@ const seed = {
   ec: () => Number(jitter(1.6, 0.9).toFixed(2)),
 };
 
+// Sensors relevant to a device type. Sensors that are reporting a value are
+// always kept, so nothing the hardware sends is hidden.
+export const attributesFor = (kind, readings = {}) => {
+  const groups = groupsFor(kind);
+  return ATTRIBUTES.filter((a) => groups.has(a.group) || hasValue(readings[a.key]));
+};
+
 export const hasValue = (v) => v !== null && v !== undefined && !Number.isNaN(v);
 
 export const emptyReadings = () => {
@@ -91,6 +98,12 @@ export const attrStatus = (a, v) => {
 
 export const statusColor = (s) => STATUS_COLORS[s] || STATUS_COLORS["N/A"];
 
+const STATUS_LABELS = { IDEAL: "Ideal", FAIR: "Fair", STRESS: "Out of range", "N/A": "No data" };
+export const statusLabel = (s) => STATUS_LABELS[s] || s;
+
+// Display form of a unit ("PH" is the internal key, users read "pH").
+export const unitLabel = (unit) => (unit === "PH" ? "pH" : unit);
+
 export const DEFAULT_ALARMS = [
   { id: "alarm-1", device: "Greenhouse Alpha", trigger: "Soil Moisture", critical: "14.1%", at: Date.now() - 1000 * 60 * 8, severity: "CRITICAL", description: "Critical dryness detected. Review irrigation loop A." },
   { id: "alarm-2", device: "Greenhouse Alpha", trigger: "Temperature", critical: "34.5 C", at: Date.now() - 1000 * 60 * 22, severity: "WARNING", description: "Canopy temperature above comfort band." },
@@ -116,6 +129,9 @@ const LIVE_CACHE_TTL = 15000;
 
 const liveCache = new Map();
 let refreshPromise = null;
+
+// Fired when the refresh token is rejected; App listens and returns to login.
+export const SESSION_EXPIRED_EVENT = "groxvel:session-expired";
 
 export const apiClient = axios.create({
   baseURL: apiBaseUrl,
@@ -167,6 +183,7 @@ apiClient.interceptors.response.use(
       return apiClient(originalRequest);
     } catch (refreshError) {
       clearSession();
+      window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
       return Promise.reject(refreshError);
     } finally {
       refreshPromise = null;
@@ -186,7 +203,7 @@ const extractMessage = (error, fallback) => {
   }
   if (data?.error) return data.error;
   if (!error?.response) {
-    return "Cannot reach Hydro. Check that the server is running and your device is connected to the same network.";
+    return "Cannot reach Groxvel. Check your internet connection and try again.";
   }
   return fallback || error.message || "Something went wrong.";
 };
@@ -321,6 +338,23 @@ export const sensorApi = {
 
 export const fetchFleetState = async () => {
   try {
+    return await loadFleetState();
+  } catch (error) {
+    throw new Error(extractMessage(error, "Failed to load your devices."));
+  }
+};
+
+export const fetchActiveAlarms = async () => {
+  try {
+    const response = await sensorApi.getActiveAlarms();
+    return Array.isArray(response?.data) ? response.data : [];
+  } catch (error) {
+    throw new Error(extractMessage(error, "Failed to load alarms."));
+  }
+};
+
+const loadFleetState = async () => {
+  try {
     const home = await sensorApi.getHome();
     const devices = home?.data?.devices || [];
     const deviceList = devices.map((item) => normalizeFrontendDevice(item, item.live));
@@ -343,13 +377,21 @@ export const fetchFleetState = async () => {
   }
 };
 
+export const deviceIdFromName = (name) =>
+  `${name}`.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
 export const createFrontendDevice = async ({ name, zone, kind }) => {
-  const deviceId = `${name}`.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `device-${Date.now()}`;
-  const response = await sensorApi.createDevice({
-    device_id: deviceId,
-    device_name: name.trim(),
-    location: zone.trim(),
-  });
+  const deviceId = deviceIdFromName(name) || `device-${Date.now()}`;
+  let response;
+  try {
+    response = await sensorApi.createDevice({
+      device_id: deviceId,
+      device_name: name.trim(),
+      location: zone.trim(),
+    });
+  } catch (error) {
+    throw new Error(extractMessage(error, "Failed to add device."));
+  }
   persistDeviceMeta(deviceId, { kind });
   const device = normalizeFrontendDevice(response.data, null);
   return { ...device, kind };
@@ -373,4 +415,33 @@ export const fetchDeviceLiveState = async (device) => {
       error: extractMessage(error, "Failed to load live sensor data."),
     };
   }
+};
+
+const HISTORY_TIME_KEYS = ["updated_at", "created_at", "timestamp", "recorded_at", "time"];
+
+// Normalizes sensor history into [{ at: ms, <attr>: number|null }] sorted by
+// time. Accepts a bare array or one nested under data / readings / history.
+export const fetchSensorHistory = async (deviceId, hours = 24) => {
+  let body;
+  try {
+    body = await sensorApi.getSensorHistory(deviceId, hours);
+  } catch (error) {
+    throw new Error(extractMessage(error, "Failed to load history."));
+  }
+  const candidates = [body, body?.data, body?.data?.readings, body?.data?.history, body?.readings, body?.history];
+  const rows = candidates.find(Array.isArray) || [];
+  return rows
+    .map((row) => {
+      const timeKey = HISTORY_TIME_KEYS.find((k) => row?.[k]);
+      const at = timeKey ? Date.parse(row[timeKey]) : NaN;
+      if (Number.isNaN(at)) return null;
+      const point = { at };
+      for (const a of ATTRIBUTES) {
+        const v = row[a.key] === null || row[a.key] === undefined ? null : Number(row[a.key]);
+        point[a.key] = Number.isNaN(v) ? null : v;
+      }
+      return point;
+    })
+    .filter(Boolean)
+    .sort((x, y) => x.at - y.at);
 };

@@ -7,11 +7,11 @@ export default function TopBar({ operator, onLogout }) {
   const fullName = operator?.full_name || "Operator";
 
   return (
-    <div className="sticky top-0 z-20 bg-[#080F0B]/85 backdrop-blur-lg">
+    <div className="sticky top-0 z-20 bg-[#080F0B]/85 backdrop-blur-lg" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       <div className="mx-auto max-w-md px-6 py-5 flex items-center justify-between">
         <GroxvelLogo height={26} />
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <div className="flex items-center gap-2.5">
             <div
               className="h-9 w-9 rounded-full flex items-center justify-center text-[11px] font-semibold text-[#0B2214]"
@@ -24,7 +24,7 @@ export default function TopBar({ operator, onLogout }) {
           </div>
           <button
             onClick={onLogout}
-            className="text-white/35 hover:text-white/70 transition-colors ml-1"
+            className="h-10 w-10 -mr-2 rounded-full flex items-center justify-center text-white/60 hover:text-white active:bg-white/[0.06] transition-colors"
             aria-label="Log out"
             data-testid="btn-logout"
           >

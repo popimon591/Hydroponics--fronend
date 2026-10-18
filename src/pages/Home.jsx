@@ -1,109 +1,134 @@
-﻿import { useCallback, useEffect, useState, memo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { ChevronRight, Thermometer, Droplets, Sprout, ArrowRight } from "lucide-react";
-import { fetchFleetState, hasValue, timeAgoShort } from "@/lib/telemetry";
-import { LS_KEYS, readJSON, writeJSON } from "@/lib/storage";
+import { memo } from "react";
+import { AlertTriangle, ChevronRight, Plus, Sprout, Wifi, WifiOff } from "lucide-react";
 
-const POLL_MS = 30000;
+import { EmptyState, ErrorBanner, SkeletonCards } from "@/components/Feedback";
+import { ATTRIBUTES, attrStatus, hasValue, statusColor, timeAgoShort } from "@/lib/telemetry";
+import { useFleet } from "@/lib/useFleet";
 
 const SpotlightBanner = memo(function SpotlightBanner() {
   return (
     <div className="mt-4 fade-up relative overflow-hidden surface p-0" data-testid="spotlight-banner">
-      <div className="relative h-40">
-        <img src="https://images.unsplash.com/photo-1530836369250-ef72a3f5cda8?auto=format&fit=crop&w=1000&q=60" alt="Groxvel field technology" className="absolute inset-0 w-full h-full object-cover opacity-70" />
-        <div className="absolute inset-0" style={{ background: "linear-gradient(90deg, rgba(8,15,11,0.9) 0%, rgba(8,15,11,0.55) 55%, rgba(8,15,11,0.15) 100%)" }} />
-        <div className="relative h-full flex flex-col justify-between p-5">
-          <div>
-            <div className="text-[10px] uppercase tracking-[0.28em] text-emerald-300">Groxvel Tech</div>
-            <div className="mt-1 font-display text-xl font-bold text-white leading-tight max-w-[65%]">Smarter farming with regenerative sensing</div>
-          </div>
-          <button className="self-start rounded-full bg-[#39B54A]/15 border border-[#39B54A]/40 text-[#39B54A] text-xs font-semibold px-4 py-1.5 flex items-center gap-1.5 hover:bg-[#39B54A]/25 transition-colors" data-testid="btn-spotlight-learn">
-            Learn more <ArrowRight className="h-3 w-3" />
-          </button>
+      <div className="relative h-36" style={{ background: "radial-gradient(260px 180px at 85% 60%, rgba(57,181,74,0.28), transparent 70%), linear-gradient(135deg, #0F2417 0%, #0A160F 100%)" }}>
+        <Sprout className="absolute -right-4 -bottom-6 h-40 w-40 text-[#39B54A]/20" strokeWidth={1.2} aria-hidden="true" />
+        <div className="relative h-full flex flex-col justify-center p-5">
+          <div className="text-[11px] uppercase tracking-[0.24em] text-emerald-300">Groxvel Tech</div>
+          <div className="mt-1 font-display text-xl font-bold text-white leading-tight max-w-[70%]">Smarter farming with regenerative sensing</div>
         </div>
       </div>
     </div>
   );
 });
 
-const DevicePill = ({ online }) => {
-  const style = online ? { color: "#39B54A", background: "rgba(57,181,74,0.12)" } : { color: "#E36361", background: "rgba(227,99,97,0.12)" };
-  return <span className="pill" style={style}>{online ? "ONLINE" : "OFFLINE"}</span>;
+const SummaryTile = ({ icon, label, value, tone, onClick, testid }) => {
+  const Tag = onClick ? "button" : "div";
+  return (
+    <Tag onClick={onClick} className="surface p-3 text-left min-h-[72px]" data-testid={testid}>
+      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-white/60">
+        <span style={{ color: tone }} aria-hidden="true">{icon}</span>{label}
+      </div>
+      <div className="font-display font-bold text-xl mt-1.5 leading-none" style={{ color: tone }}>{value}</div>
+    </Tag>
+  );
 };
 
-const MiniStat = ({ icon, label, value }) => (
-  <div className="rounded-xl bg-white/[0.02] border border-white/5 p-3">
-    <div className="flex items-center gap-1.5 text-white/40 text-[10px] uppercase tracking-widest"><span className="text-emerald-400/80">{icon}</span>{label}</div>
-    <div className="font-display font-bold text-white text-lg mt-1 leading-none">{value}</div>
-  </div>
-);
+const DevicePill = ({ online }) => {
+  const style = online ? { color: "#39B54A", background: "rgba(57,181,74,0.12)" } : { color: "#E36361", background: "rgba(227,99,97,0.12)" };
+  return <span className="pill" style={style}>{online ? "Online" : "Offline"}</span>;
+};
 
-const formatCore = (value, suffix) => (hasValue(value) ? `${value}${suffix}` : "N/A");
-const formatPh = (value) => (hasValue(value) ? value.toFixed(2) : "N/A");
+// The four readings that matter most for each kind of farm.
+const QUICK_STATS = {
+  Soil: ["temperature", "humidity", "soil_moisture", "soil_ph"],
+  Hydroponic: ["temperature", "humidity", "ph", "tds"],
+  Mixed: ["temperature", "humidity", "ph", "soil_moisture"],
+};
+const ATTR_BY_KEY = Object.fromEntries(ATTRIBUTES.map((a) => [a.key, a]));
+const SHORT_LABEL = { temperature: "Air", humidity: "Humidity", soil_moisture: "Soil", soil_ph: "Soil pH", ph: "pH", tds: "TDS" };
 
-const DeviceExpanded = ({ device, readings, onOpen }) => (
-  <div className="px-4 pb-4">
-    <div className="mt-1 pt-4 border-t border-white/5">
-      <div className="grid grid-cols-4 gap-2">
-        <MiniStat icon={<Thermometer className="h-3.5 w-3.5" />} label="Air" value={formatCore(readings.temperature, "°")} />
-        <MiniStat icon={<Droplets className="h-3.5 w-3.5" />} label="Humid" value={formatCore(readings.humidity, "%")} />
-        <MiniStat icon={<Sprout className="h-3.5 w-3.5" />} label="Soil" value={formatCore(readings.soil_moisture, "%")} />
-        <MiniStat icon={<Droplets className="h-3.5 w-3.5" />} label="pH" value={formatPh(readings.ph)} />
-      </div>
-      <div className="mt-4 flex items-center justify-between text-[11px] text-white/40">
-        <span>Last sync: {device.lastSync ? timeAgoShort(device.lastSync) : "No data"}</span>
-        <button onClick={(e) => { e.stopPropagation(); onOpen(device.id); }} className="text-[#39B54A] font-semibold hover:underline" data-testid={`btn-open-${device.id}`}>View details ?</button>
+const formatStat = (a, v) => {
+  if (!hasValue(v)) return "N/A";
+  if (a.unit === "PH") return v.toFixed(1);
+  if (a.unit === "°C") return `${Number(v).toFixed(1)}°`;
+  if (a.unit === "%") return `${Math.round(v)}%`;
+  return `${Math.round(v)}`;
+};
+
+const MiniStat = ({ attrKey, value }) => {
+  const a = ATTR_BY_KEY[attrKey];
+  const available = hasValue(value);
+  return (
+    <div className="rounded-xl bg-white/[0.03] border border-white/5 px-2 py-2.5 text-center">
+      <div className="text-[11px] text-white/60 truncate">{SHORT_LABEL[attrKey]}</div>
+      <div className="font-display font-bold text-base mt-1 leading-none" style={{ color: available ? statusColor(attrStatus(a, value)) : "rgba(255,255,255,0.45)" }}>
+        {formatStat(a, value)}
       </div>
     </div>
-  </div>
-);
+  );
+};
 
-const DeviceCard = ({ device, readings, isOpen, onToggle, onOpen }) => (
-  <div className="surface surface-hover overflow-hidden transition-colors">
-    <button onClick={onToggle} className="w-full text-left p-4 flex items-center gap-4" data-testid={`device-${device.id}`}>
-      <div className="h-11 w-11 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: device.online ? "rgba(57,181,74,0.14)" : "rgba(227,99,97,0.14)" }}><Sprout className="h-5 w-5" style={{ color: device.online ? "#39B54A" : "#E36361" }} /></div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2"><div className="font-semibold text-white truncate">{device.name}</div><DevicePill online={device.online} /></div>
-        <div className="text-xs text-white/40 mt-1 flex items-center gap-2"><span>{device.zone}</span><span className="text-white/20">·</span><span>{device.kind}</span></div>
+const DeviceCard = memo(function DeviceCard({ device, readings, onOpen }) {
+  const keys = QUICK_STATS[device.kind] || QUICK_STATS.Mixed;
+  return (
+    <button onClick={() => onOpen(device.id)} className="w-full text-left surface surface-hover p-4 transition-colors" data-testid={`device-${device.id}`}>
+      <div className="flex items-center gap-3">
+        <div className="h-11 w-11 rounded-2xl flex items-center justify-center flex-shrink-0" style={{ background: device.online ? "rgba(57,181,74,0.14)" : "rgba(227,99,97,0.14)" }}>
+          <Sprout className="h-5 w-5" style={{ color: device.online ? "#39B54A" : "#E36361" }} aria-hidden="true" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2"><div className="font-semibold text-white truncate">{device.name}</div><DevicePill online={device.online} /></div>
+          <div className="text-xs text-white/60 mt-1 truncate">{device.zone} · {device.kind}</div>
+        </div>
+        <ChevronRight className="h-5 w-5 text-white/40 flex-shrink-0" aria-hidden="true" />
       </div>
-      <ChevronRight className="h-4 w-4 text-white/30 transition-transform" style={{ transform: isOpen ? "rotate(90deg)" : "rotate(0)" }} />
+      <div className="mt-4 grid grid-cols-4 gap-2">
+        {keys.map((key) => <MiniStat key={key} attrKey={key} value={readings[key]} />)}
+      </div>
+      <div className="mt-3 text-xs text-white/55">Last reading: {device.lastSync ? timeAgoShort(device.lastSync) : "none yet"}</div>
     </button>
-    <AnimatePresence initial={false}>{isOpen && <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: 0.3 }} className="overflow-hidden"><DeviceExpanded device={device} readings={readings} onOpen={onOpen} /></motion.div>}</AnimatePresence>
-  </div>
-);
+  );
+});
 
-export default function Home({ onOpenDevice }) {
-  const [devices, setDevices] = useState(() => readJSON(LS_KEYS.DEVICES, []));
-  const [readings, setReadings] = useState(() => readJSON(LS_KEYS.READINGS, {}));
-  const [expanded, setExpanded] = useState(null);
-
-  const loadFleet = useCallback(async () => {
-    const snapshot = await fetchFleetState();
-    setDevices(snapshot.devices);
-    setReadings(snapshot.readingsMap);
-  }, []);
-
-  useEffect(() => { loadFleet().catch((error) => console.error("Failed to load home fleet:", error)); }, [loadFleet]);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      loadFleet().catch((error) => console.error("Failed to refresh home fleet:", error));
-    }, POLL_MS);
-    return () => clearInterval(timer);
-  }, [loadFleet]);
-
-  useEffect(() => { writeJSON(LS_KEYS.DEVICES, devices); }, [devices]);
-  useEffect(() => { writeJSON(LS_KEYS.READINGS, readings); }, [readings]);
-
-  const toggleExpand = useCallback((id) => { setExpanded((current) => (current === id ? null : id)); }, []);
+export default function Home({ onOpenDevice, onAddDevice, onOpenAlarms, pollResumeKey }) {
+  const { devices, readings, alarms, loading, error, reloading, reload } = useFleet({ pollResumeKey });
   const onlineCount = devices.filter((device) => device.online).length;
+  const offlineCount = devices.length - onlineCount;
 
   return (
     <div className="mx-auto max-w-md px-6 pt-2 pb-36">
-      <div className="mt-2"><div className="text-white font-display text-lg font-bold">Spotlight</div><div className="text-xs text-white/40 mt-0.5">News, updates & product highlights</div></div>
+      {error && <ErrorBanner message={error} onRetry={reload} retrying={reloading} note={devices.length ? "Showing the last saved data." : null} />}
+
+      {!loading && devices.length > 0 && (
+        <div className="mt-4 grid grid-cols-3 gap-2" data-testid="fleet-summary">
+          <SummaryTile icon={<Wifi className="h-3.5 w-3.5" />} label="Online" value={`${onlineCount}/${devices.length}`} tone="#39B54A" testid="summary-online" />
+          <SummaryTile icon={<WifiOff className="h-3.5 w-3.5" />} label="Offline" value={offlineCount} tone={offlineCount ? "#E36361" : "rgba(255,255,255,0.7)"} testid="summary-offline" />
+          <SummaryTile icon={<AlertTriangle className="h-3.5 w-3.5" />} label="Alarms" value={alarms.length} tone={alarms.length ? "#E5B23B" : "rgba(255,255,255,0.7)"} onClick={onOpenAlarms} testid="summary-alarms" />
+        </div>
+      )}
+
       <SpotlightBanner />
-      <div className="mt-8 flex items-end justify-between"><div><div className="text-white font-display text-lg font-bold">Your Devices</div><div className="text-xs text-white/40 mt-0.5">Tap a device to view live readings</div></div><div className="text-[11px] text-white/40">{onlineCount}/{devices.length} online</div></div>
-      <div className="mt-4 space-y-3" data-testid="devices-list">{devices.map((device) => <DeviceCard key={device.id} device={device} readings={readings[device.id] || {}} isOpen={expanded === device.id} onToggle={() => toggleExpand(device.id)} onOpen={onOpenDevice} />)}</div>
+
+      <div className="mt-8">
+        <div className="text-white font-display text-lg font-bold">Your Devices</div>
+        <div className="text-xs text-white/60 mt-0.5">Tap a device to view live readings</div>
+      </div>
+      <div className="mt-4 space-y-3" data-testid="devices-list">
+        {loading ? (
+          <SkeletonCards />
+        ) : devices.length === 0 ? (
+          !error && (
+            <EmptyState
+              icon={<Plus className="h-5 w-5" />}
+              title="No devices yet"
+              body="Add your first sensor unit to start monitoring your farm."
+              actionLabel="Add a device"
+              onAction={onAddDevice}
+              testid="home-empty"
+            />
+          )
+        ) : (
+          devices.map((device) => <DeviceCard key={device.id} device={device} readings={readings[device.id] || {}} onOpen={onOpenDevice} />)
+        )}
+      </div>
     </div>
   );
 }
-

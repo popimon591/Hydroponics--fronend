@@ -1,10 +1,11 @@
-﻿// Shared localStorage helpers with proper error logging.
+// Shared localStorage helpers with proper error logging.
 
 export const LS_KEYS = {
   DEVICES: "groxvel_devices_v4",
   DEVICE_META: "groxvel_device_meta_v1",
   READINGS: "groxvel_readings_v4",
   ALARMS: "groxvel_alarms_v4",
+  DISMISSED_ALARMS: "groxvel_dismissed_alarms_v1",
   ACCESS_TOKEN: "groxvel_access_token",
   REFRESH_TOKEN: "groxvel_refresh_token",
   SESSION_USER: "groxvel_session_user",
@@ -61,6 +62,15 @@ export const clearSession = () => {
   removeKey(LS_KEYS.ACCESS_TOKEN);
   removeKey(LS_KEYS.REFRESH_TOKEN);
   removeKey(LS_KEYS.SESSION_USER);
+};
+
+// Cached farm data belongs to the signed-in account; drop it on logout so
+// the next account never sees it.
+export const clearUserData = () => {
+  removeKey(LS_KEYS.DEVICES);
+  removeKey(LS_KEYS.READINGS);
+  removeKey(LS_KEYS.ALARMS);
+  removeKey(LS_KEYS.DISMISSED_ALARMS);
 };
 
 export const hasSession = () => Boolean(getRefreshToken() && getSessionUser());

@@ -1,5 +1,3 @@
-@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Sora:wght@600;700;800&display=swap");
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -67,7 +65,7 @@ body {
   border-bottom-color: #39B54A;
   box-shadow: 0 1px 0 0 #39B54A;
 }
-.input-clean::placeholder { color: rgba(255,255,255,0.30); }
+.input-clean::placeholder { color: rgba(255,255,255,0.40); }
 
 /* Status pills */
 .pill {
@@ -75,7 +73,7 @@ body {
   align-items: center;
   padding: 3px 8px;
   border-radius: 6px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -103,5 +101,5 @@ body {
 *::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 6px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .fade-up, .soft-glow { animation: none !important; }
+  .fade-up, .soft-glow, .animate-pulse { animation: none !important; }
 }

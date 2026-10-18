@@ -1,4 +1,4 @@
-import { attrStatus, statusColor, hasValue } from "@/lib/telemetry";
+import { attrStatus, statusColor, statusLabel, hasValue, unitLabel } from "@/lib/telemetry";
 
 // Minimal circular gauge — thin arc, big centered value+unit.
 // When value is null/undefined, renders "N/A" with no progress arc.
@@ -14,7 +14,7 @@ export default function CircularGauge({ a, value, size = 132, thickness = 8, sho
 
   return (
     <div className="relative flex items-center justify-center" style={{ width: size, height: size }} data-testid={testid}>
-      <svg width={size} height={size} className="-rotate-90">
+      <svg width={size} height={size} className="-rotate-90" aria-hidden="true">
         <circle cx={cx} cy={cy} r={r} stroke="rgba(255,255,255,0.06)" strokeWidth={thickness} fill="none" strokeDasharray={available ? undefined : "4 4"} />
         {available && (
           <circle
@@ -31,16 +31,16 @@ export default function CircularGauge({ a, value, size = 132, thickness = 8, sho
         {available ? (
           <>
             <div className="font-display font-bold text-white text-2xl leading-none">{format(value, a)}</div>
-            <div className="text-[10px] tracking-widest text-white/50 mt-1.5 uppercase">{a.unit}</div>
+            <div className="text-[11px] tracking-wider text-white/60 mt-1.5">{unitLabel(a.unit)}</div>
           </>
         ) : (
           <>
-            <div className="font-display font-bold text-white/30 text-xl leading-none">N/A</div>
-            <div className="text-[9px] tracking-widest text-white/25 mt-1.5 uppercase">no data</div>
+            <div className="font-display font-bold text-white/45 text-xl leading-none">N/A</div>
+            <div className="text-[11px] tracking-wider text-white/45 mt-1.5">No data</div>
           </>
         )}
         {showState && available && (
-          <div className="text-[9px] uppercase tracking-widest mt-1 font-semibold" style={{ color }}>{status}</div>
+          <div className="text-[11px] uppercase tracking-wider mt-1 font-semibold" style={{ color }}>{statusLabel(status)}</div>
         )}
       </div>
     </div>

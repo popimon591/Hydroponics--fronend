@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import "@/App.css";
 import BottomNav from "@/components/BottomNav";
@@ -8,9 +8,13 @@ import DevicesDashboard from "@/pages/DevicesDashboard";
 import Home from "@/pages/Home";
 import Readings from "@/pages/Readings";
 import Splash from "@/pages/Splash";
-import { Toaster } from "sonner";
+import { AnimatePresence } from "framer-motion";
+import { Toaster, toast } from "sonner";
 
-import { clearSession, getSessionUser, hasSession } from "@/lib/storage";
+import { ConfirmSheet } from "@/components/Feedback";
+import { useBackHandler } from "@/lib/backHandler";
+import { clearSession, clearUserData, getSessionUser, hasSession } from "@/lib/storage";
+import { SESSION_EXPIRED_EVENT } from "@/lib/telemetry";
 import { useMobile } from "@/lib/useMobile";
 
 export default function App() {
@@ -19,6 +23,9 @@ export default function App() {
   const [tab, setTab] = useState("home");
   const [view, setView] = useState("index");
   const [activeDevice, setActiveDevice] = useState(null);
+  // What the Devices tab should open on: { tab: "list" | "alarms", add: bool }
+  const [devicesIntent, setDevicesIntent] = useState(null);
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   // appReady becomes true once we have moved past splash into the real UI
   const [appReady, setAppReady] = useState(false);
@@ -57,24 +64,55 @@ export default function App() {
     setAppReady(true);
   };
 
-  const onLogout = () => {
+  const onLogout = useCallback(() => {
     clearSession();
+    clearUserData();
+    setConfirmLogout(false);
     setOperator(null);
     setActiveDevice(null);
+    setDevicesIntent(null);
     setTab("home");
     setView("index");
     setPhase("auth");
-  };
+  }, []);
+
+  // The API layer fires this when the session can no longer be refreshed.
+  useEffect(() => {
+    const onExpired = () => {
+      if (!hasSession()) {
+        onLogout();
+        // Several requests can fail at once; the id keeps it to one toast.
+        toast.error("Your session has expired. Please sign in again.", { id: "session-expired" });
+      }
+    };
+    window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
+  }, [onLogout]);
 
   const openDevice = (id) => {
     setActiveDevice(id);
     setView("readings");
   };
 
-  const changeTab = (nextTab) => {
+  const changeTab = (nextTab, intent = null) => {
+    setDevicesIntent(intent);
     setTab(nextTab);
     setView("index");
   };
+
+  // Android back: Readings → list, Devices tab → Home, Home → minimize.
+  useBackHandler(() => {
+    if (phase !== "app") return false;
+    if (view === "readings") {
+      setView("index");
+      return true;
+    }
+    if (tab !== "home") {
+      changeTab("home");
+      return true;
+    }
+    return false;
+  });
 
   return (
     <div className={phase === "auth" ? "App h-[100dvh] min-h-0 overflow-hidden" : "App min-h-screen"}>
@@ -95,7 +133,7 @@ export default function App() {
       {phase === "auth" && <Auth onAuthed={onAuthed} />}
       {phase === "app" && operator && (
         <>
-          <TopBar operator={operator} onLogout={onLogout} />
+          <TopBar operator={operator} onLogout={() => setConfirmLogout(true)} />
           {view === "readings" ? (
             <Readings
               deviceId={activeDevice}
@@ -105,15 +143,30 @@ export default function App() {
           ) : tab === "home" ? (
             <Home
               onOpenDevice={openDevice}
+              onAddDevice={() => changeTab("device", { tab: "list", add: true })}
+              onOpenAlarms={() => changeTab("device", { tab: "alarms" })}
               pollResumeKey={pollResumeKey}
             />
           ) : (
             <DevicesDashboard
               onOpenDevice={openDevice}
+              intent={devicesIntent}
               pollResumeKey={pollResumeKey}
             />
           )}
-          <BottomNav active={tab} onChange={changeTab} />
+          <BottomNav active={tab} onChange={(next) => changeTab(next)} />
+          <AnimatePresence>
+            {confirmLogout && (
+              <ConfirmSheet
+                title="Log out?"
+                body="You will need to verify your phone number again to sign back in."
+                confirmLabel="Log out"
+                onConfirm={onLogout}
+                onCancel={() => setConfirmLogout(false)}
+                testid="confirm-logout"
+              />
+            )}
+          </AnimatePresence>
         </>
       )}
     </div>
