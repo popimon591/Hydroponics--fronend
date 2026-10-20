@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import "@/App.css";
 import BottomNav from "@/components/BottomNav";
@@ -11,7 +11,7 @@ import Splash from "@/pages/Splash";
 import { AnimatePresence } from "framer-motion";
 import { Toaster, toast } from "sonner";
 
-import { ConfirmSheet } from "@/components/Feedback";
+import { ConfirmSheet, ProfileSheet } from "@/components/Feedback";
 import { useBackHandler } from "@/lib/backHandler";
 import { clearSession, clearUserData, getSessionUser, hasSession } from "@/lib/storage";
 import { SESSION_EXPIRED_EVENT } from "@/lib/telemetry";
@@ -25,10 +25,11 @@ export default function App() {
   const [activeDevice, setActiveDevice] = useState(null);
   // What the Devices tab should open on: { tab: "list" | "alarms", add: bool }
   const [devicesIntent, setDevicesIntent] = useState(null);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [confirmLogout, setConfirmLogout] = useState(false);
 
-  // appReady becomes true once we have moved past splash into the real UI
   const [appReady, setAppReady] = useState(false);
+  useEffect(() => { setAppReady(true); }, []);
 
   // pollResumeKey: incrementing this tells child pages to re-fetch immediately
   const [pollResumeKey, setPollResumeKey] = useState(0);
@@ -46,34 +47,48 @@ export default function App() {
 
   useMobile({ onResume, onPause, appReady });
 
+  // ── Scroll position per screen ──────────────────────────────────────────
+  // The whole app scrolls the window, so without this a device opened from
+  // halfway down Home would land halfway down Readings. Readings always
+  // starts at the top; Home and Devices come back where the user left them.
+  const screenKey = view === "readings" ? `readings:${activeDevice}` : tab;
+  const scrollPositions = useRef({});
+  const currentScreen = useRef(screenKey);
+  useEffect(() => {
+    const onScroll = () => { scrollPositions.current[currentScreen.current] = window.scrollY; };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  useLayoutEffect(() => {
+    currentScreen.current = screenKey;
+    window.scrollTo(0, screenKey.startsWith("readings:") ? 0 : scrollPositions.current[screenKey] || 0);
+  }, [screenKey]);
+
   // ── Session restore on mount ────────────────────────────────────────────
   useEffect(() => {
     setOperator(getSessionUser());
   }, []);
 
   // ── Phase transitions ───────────────────────────────────────────────────
-  const onSplashDone = () => {
-    setPhase(hasSession() ? "app" : "auth");
-    // Signal useMobile to hide the native splash screen
-    setAppReady(true);
-  };
+  const onSplashDone = () => setPhase(hasSession() ? "app" : "auth");
 
   const onAuthed = (user) => {
     setOperator(user);
     setPhase("app");
-    setAppReady(true);
   };
 
   const onLogout = useCallback(() => {
     clearSession();
     clearUserData();
     setConfirmLogout(false);
+    setProfileOpen(false);
     setOperator(null);
     setActiveDevice(null);
     setDevicesIntent(null);
     setTab("home");
     setView("index");
     setPhase("auth");
+    scrollPositions.current = {};
   }, []);
 
   // The API layer fires this when the session can no longer be refreshed.
@@ -133,7 +148,7 @@ export default function App() {
       {phase === "auth" && <Auth onAuthed={onAuthed} />}
       {phase === "app" && operator && (
         <>
-          <TopBar operator={operator} onLogout={() => setConfirmLogout(true)} />
+          <TopBar operator={operator} onOpenProfile={() => setProfileOpen(true)} />
           {view === "readings" ? (
             <Readings
               deviceId={activeDevice}
@@ -156,13 +171,22 @@ export default function App() {
           )}
           <BottomNav active={tab} onChange={(next) => changeTab(next)} />
           <AnimatePresence>
+            {profileOpen && !confirmLogout && (
+              <ProfileSheet
+                operator={operator}
+                onLogout={() => setConfirmLogout(true)}
+                onClose={() => setProfileOpen(false)}
+              />
+            )}
+          </AnimatePresence>
+          <AnimatePresence>
             {confirmLogout && (
               <ConfirmSheet
                 title="Log out?"
                 body="You will need to verify your phone number again to sign back in."
                 confirmLabel="Log out"
                 onConfirm={onLogout}
-                onCancel={() => setConfirmLogout(false)}
+                onCancel={() => { setConfirmLogout(false); setProfileOpen(false); }}
                 testid="confirm-logout"
               />
             )}

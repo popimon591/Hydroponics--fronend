@@ -98,7 +98,7 @@ export const attrStatus = (a, v) => {
 
 export const statusColor = (s) => STATUS_COLORS[s] || STATUS_COLORS["N/A"];
 
-const STATUS_LABELS = { IDEAL: "Ideal", FAIR: "Fair", STRESS: "Out of range", "N/A": "No data" };
+const STATUS_LABELS = { IDEAL: "Ideal", FAIR: "Slightly off", STRESS: "Out of range", "N/A": "No data" };
 export const statusLabel = (s) => STATUS_LABELS[s] || s;
 
 // Display form of a unit ("PH" is the internal key, users read "pH").

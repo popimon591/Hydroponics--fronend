@@ -1,5 +1,10 @@
+import { useEffect, useState } from "react";
+import { App as CapApp } from "@capacitor/app";
+import { Capacitor } from "@capacitor/core";
 import { motion } from "framer-motion";
-import { RefreshCw, WifiOff } from "lucide-react";
+import { LogOut, RefreshCw, WifiOff } from "lucide-react";
+
+import { Avatar } from "@/components/TopBar";
 
 import { useBackHandler } from "@/lib/backHandler";
 
@@ -102,3 +107,27 @@ export const ConfirmSheet = ({ title, body, confirmLabel, onConfirm, onCancel, t
     </div>
   </Sheet>
 );
+
+// Account details and logout, opened from the name in the top bar.
+export const ProfileSheet = ({ operator, onLogout, onClose }) => {
+  const [version, setVersion] = useState(null);
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    CapApp.getInfo().then((info) => setVersion(`${info.version} (${info.build})`)).catch(() => {});
+  }, []);
+  return (
+    <Sheet onClose={onClose} labelledBy="profile-title" testid="profile-sheet">
+      <div className="flex items-center gap-4">
+        <Avatar operator={operator} size={52} />
+        <div className="min-w-0">
+          <div id="profile-title" className="text-white font-display font-bold text-lg truncate">{operator?.full_name || "Operator"}</div>
+          {operator?.phone_number && <div className="text-sm text-white/65 mt-0.5">{operator.phone_number}</div>}
+        </div>
+      </div>
+      {version && <div className="mt-5 text-xs text-white/60">Groxvel app version {version}</div>}
+      <button onClick={onLogout} className="mt-6 w-full h-12 rounded-full bg-white/[0.06] border border-white/10 text-[#E36361] font-semibold flex items-center justify-center gap-2" data-testid="btn-logout">
+        <LogOut className="h-4 w-4" aria-hidden="true" /> Log out
+      </button>
+    </Sheet>
+  );
+};

@@ -13,10 +13,22 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- Dark from the first frame, so there is no white flash between the
+             launch screen and the web view painting. -->
+        <item name="android:windowBackground">@color/groxvel_background</item>
+        <item name="android:statusBarColor">@color/groxvel_background</item>
+        <item name="android:navigationBarColor">@color/groxvel_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
     </style>
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
+        <!-- Android 12+ system splash: dark brand background with the G icon -->
+        <item name="windowSplashScreenBackground">#080F0B</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+        <item name="windowSplashScreenIconBackgroundColor">#FFFFFF</item>
+        <item name="postSplashScreenTheme">@style/AppTheme.NoActionBar</item>
     </style>
 </resources>

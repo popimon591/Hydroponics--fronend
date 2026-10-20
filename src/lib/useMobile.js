@@ -20,6 +20,7 @@ import { SplashScreen } from "@capacitor/splash-screen";
 import { StatusBar, Style } from "@capacitor/status-bar";
 import { Capacitor } from "@capacitor/core";
 
+import { setAppActive } from "@/lib/appState";
 import { handleBack } from "@/lib/backHandler";
 
 const IS_NATIVE = Capacitor.isNativePlatform();
@@ -79,6 +80,7 @@ export function useMobile({ onResume, onPause, appReady = false } = {}) {
 
     let listener;
     CapApp.addListener("appStateChange", ({ isActive }) => {
+      setAppActive(isActive);
       if (isActive) {
         // Returned to foreground — resume sensor polling
         onResume?.();
@@ -115,20 +117,16 @@ export function useMobile({ onResume, onPause, appReady = false } = {}) {
     };
   }, []);
 
-  // ── Keyboard show / hide layout adjustment ────────────────────────────
+  // ── Keyboard show: keep the focused field visible ─────────────────────
+  // capacitor.config.json sets Keyboard.resize = "body", so the plugin
+  // already shrinks the body; adding padding here as well pushed forms up
+  // twice. All that is left to do is scroll the focused field into view.
   useEffect(() => {
     if (!IS_NATIVE) return;
 
-    const bodyEl = document.body;
+    let showListener;
 
-    let showListener, hideListener;
-
-    Keyboard.addListener("keyboardWillShow", ({ keyboardHeight }) => {
-      // Push the body up so the focused input isn't hidden behind keyboard
-      bodyEl.style.paddingBottom = `${keyboardHeight}px`;
-      bodyEl.style.transition = "padding-bottom 0.25s ease";
-
-      // Scroll the active element into view after a brief delay
+    Keyboard.addListener("keyboardDidShow", () => {
       requestAnimationFrame(() => {
         const active = document.activeElement;
         if (active && typeof active.scrollIntoView === "function") {
@@ -139,15 +137,8 @@ export function useMobile({ onResume, onPause, appReady = false } = {}) {
       showListener = l;
     });
 
-    Keyboard.addListener("keyboardWillHide", () => {
-      bodyEl.style.paddingBottom = "0px";
-    }).then((l) => {
-      hideListener = l;
-    });
-
     return () => {
       showListener?.remove();
-      hideListener?.remove();
     };
   }, []);
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { fetchActiveAlarms, fetchFleetState } from "@/lib/telemetry";
+import { isAppActive } from "@/lib/appState";
+import { ATTRIBUTES, attrStatus, fetchActiveAlarms, fetchFleetState } from "@/lib/telemetry";
 import { LS_KEYS, readJSON, writeJSON } from "@/lib/storage";
 
 const POLL_MS = 30000;
@@ -8,6 +9,16 @@ const POLL_MS = 30000;
 // Shared fleet state for Home and Devices: cached devices/readings/alarms,
 // 30s polling, immediate refetch when pollResumeKey changes (app resumed),
 // and a visible error instead of silently keeping stale data.
+// Devices that need attention first: offline, then active alarms or a reading
+// out of range, then the rest. Within a group the backend order is kept.
+const attentionRank = (device, readings, alarmNames) => {
+  if (!device.online) return 0;
+  if (alarmNames.has(device.name)) return 1;
+  const values = readings[device.id] || {};
+  if (ATTRIBUTES.some((a) => attrStatus(a, values[a.key]) === "STRESS")) return 1;
+  return 2;
+};
+
 export function useFleet({ pollResumeKey = 0 } = {}) {
   const [devices, setDevices] = useState(() => readJSON(LS_KEYS.DEVICES, []));
   const [readings, setReadings] = useState(() => readJSON(LS_KEYS.READINGS, {}));
@@ -44,7 +55,7 @@ export function useFleet({ pollResumeKey = 0 } = {}) {
 
   useEffect(() => { reload(); }, [reload, pollResumeKey]);
   useEffect(() => {
-    const timer = setInterval(reload, POLL_MS);
+    const timer = setInterval(() => { if (isAppActive()) reload(); }, POLL_MS);
     return () => clearInterval(timer);
   }, [reload]);
 
@@ -67,8 +78,20 @@ export function useFleet({ pollResumeKey = 0 } = {}) {
     [alarms, dismissed]
   );
 
+  const sortedDevices = useMemo(() => {
+    const alarmNames = new Set(visibleAlarms.map((alarm) => alarm.device_name));
+    return devices
+      .map((device, index) => ({ device, index, rank: attentionRank(device, readings, alarmNames) }))
+      .sort((x, y) => x.rank - y.rank || x.index - y.index)
+      .map((entry) => entry.device);
+  }, [devices, readings, visibleAlarms]);
+
   const dismissAlarm = useCallback((id) => {
     setDismissed((current) => (current.includes(id) ? current : [...current, id]));
+  }, []);
+
+  const restoreAlarm = useCallback((id) => {
+    setDismissed((current) => current.filter((item) => item !== id));
   }, []);
 
   const addDevice = useCallback((device) => {
@@ -76,7 +99,7 @@ export function useFleet({ pollResumeKey = 0 } = {}) {
   }, []);
 
   return {
-    devices,
+    devices: sortedDevices,
     readings,
     alarms: visibleAlarms,
     loading: !loaded && devices.length === 0,
@@ -84,6 +107,7 @@ export function useFleet({ pollResumeKey = 0 } = {}) {
     reloading,
     reload,
     dismissAlarm,
+    restoreAlarm,
     addDevice,
   };
 }

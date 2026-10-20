@@ -31,16 +31,16 @@ export default function CircularGauge({ a, value, size = 132, thickness = 8, sho
         {available ? (
           <>
             <div className="font-display font-bold text-white text-2xl leading-none">{format(value, a)}</div>
-            <div className="text-[11px] tracking-wider text-white/60 mt-1.5">{unitLabel(a.unit)}</div>
+            <div className="text-xs tracking-wider text-white/60 mt-1.5">{unitLabel(a.unit)}</div>
           </>
         ) : (
           <>
-            <div className="font-display font-bold text-white/45 text-xl leading-none">N/A</div>
-            <div className="text-[11px] tracking-wider text-white/45 mt-1.5">No data</div>
+            <div className="font-display font-bold text-white/60 text-xl leading-none">N/A</div>
+            <div className="text-xs tracking-wider text-white/60 mt-1.5">No data</div>
           </>
         )}
         {showState && available && (
-          <div className="text-[11px] uppercase tracking-wider mt-1 font-semibold" style={{ color }}>{statusLabel(status)}</div>
+          <div className="text-xs uppercase tracking-wider mt-1 font-semibold" style={{ color }}>{statusLabel(status)}</div>
         )}
       </div>
     </div>
@@ -51,5 +51,5 @@ const format = (v, a) => {
   if (a.unit === "PH") return v.toFixed(2);
   if (a.unit === "°C") return v.toFixed(1);
   if (a.unit === "mS/cm") return v.toFixed(2);
-  return v;
+  return Math.round(v).toLocaleString();
 };

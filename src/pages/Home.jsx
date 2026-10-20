@@ -1,7 +1,8 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import { AlertTriangle, ChevronRight, Plus, Sprout, Wifi, WifiOff } from "lucide-react";
 
 import { EmptyState, ErrorBanner, SkeletonCards } from "@/components/Feedback";
+import { PullIndicator, usePullToRefresh } from "@/components/PullToRefresh";
 import { ATTRIBUTES, attrStatus, hasValue, statusColor, timeAgoShort } from "@/lib/telemetry";
 import { useFleet } from "@/lib/useFleet";
 
@@ -11,7 +12,7 @@ const SpotlightBanner = memo(function SpotlightBanner() {
       <div className="relative h-36" style={{ background: "radial-gradient(260px 180px at 85% 60%, rgba(57,181,74,0.28), transparent 70%), linear-gradient(135deg, #0F2417 0%, #0A160F 100%)" }}>
         <Sprout className="absolute -right-4 -bottom-6 h-40 w-40 text-[#39B54A]/20" strokeWidth={1.2} aria-hidden="true" />
         <div className="relative h-full flex flex-col justify-center p-5">
-          <div className="text-[11px] uppercase tracking-[0.24em] text-emerald-300">Groxvel Tech</div>
+          <div className="text-xs uppercase tracking-[0.24em] text-emerald-300">Groxvel Tech</div>
           <div className="mt-1 font-display text-xl font-bold text-white leading-tight max-w-[70%]">Smarter farming with regenerative sensing</div>
         </div>
       </div>
@@ -19,12 +20,13 @@ const SpotlightBanner = memo(function SpotlightBanner() {
   );
 });
 
-const SummaryTile = ({ icon, label, value, tone, onClick, testid }) => {
+const SummaryTile = ({ icon, label, value, tone, onClick, selected, testid }) => {
   const Tag = onClick ? "button" : "div";
   return (
-    <Tag onClick={onClick} className="surface p-3 text-left min-h-[72px]" data-testid={testid}>
-      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-white/60">
+    <Tag onClick={onClick} aria-pressed={selected === undefined ? undefined : selected} className="surface p-3 text-left min-h-[72px] transition-colors" style={selected ? { borderColor: tone, background: `${tone}14` } : undefined} data-testid={testid}>
+      <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-white/60">
         <span style={{ color: tone }} aria-hidden="true">{icon}</span>{label}
+        {onClick && selected === undefined && <ChevronRight className="h-3.5 w-3.5 ml-auto" aria-hidden="true" />}
       </div>
       <div className="font-display font-bold text-xl mt-1.5 leading-none" style={{ color: tone }}>{value}</div>
     </Tag>
@@ -58,8 +60,8 @@ const MiniStat = ({ attrKey, value }) => {
   const available = hasValue(value);
   return (
     <div className="rounded-xl bg-white/[0.03] border border-white/5 px-2 py-2.5 text-center">
-      <div className="text-[11px] text-white/60 truncate">{SHORT_LABEL[attrKey]}</div>
-      <div className="font-display font-bold text-base mt-1 leading-none" style={{ color: available ? statusColor(attrStatus(a, value)) : "rgba(255,255,255,0.45)" }}>
+      <div className="text-xs text-white/60 truncate">{SHORT_LABEL[attrKey]}</div>
+      <div className="font-display font-bold text-base mt-1 leading-none" style={{ color: available ? statusColor(attrStatus(a, value)) : "rgba(255,255,255,0.6)" }}>
         {formatStat(a, value)}
       </div>
     </div>
@@ -83,7 +85,7 @@ const DeviceCard = memo(function DeviceCard({ device, readings, onOpen }) {
       <div className="mt-4 grid grid-cols-4 gap-2">
         {keys.map((key) => <MiniStat key={key} attrKey={key} value={readings[key]} />)}
       </div>
-      <div className="mt-3 text-xs text-white/55">Last reading: {device.lastSync ? timeAgoShort(device.lastSync) : "none yet"}</div>
+      <div className="mt-3 text-xs text-white/65">Last reading: {device.lastSync ? timeAgoShort(device.lastSync) : "none yet"}</div>
     </button>
   );
 });
@@ -92,24 +94,31 @@ export default function Home({ onOpenDevice, onAddDevice, onOpenAlarms, pollResu
   const { devices, readings, alarms, loading, error, reloading, reload } = useFleet({ pollResumeKey });
   const onlineCount = devices.filter((device) => device.online).length;
   const offlineCount = devices.length - onlineCount;
+  // Tapping the Online / Offline tile narrows the list; tapping again clears it.
+  const [filter, setFilter] = useState(null);
+  const toggleFilter = (next) => setFilter((current) => (current === next ? null : next));
+  const shown = filter ? devices.filter((device) => device.online === (filter === "online")) : devices;
+  const pullState = usePullToRefresh(reload, reloading && !loading);
 
   return (
     <div className="mx-auto max-w-md px-6 pt-2 pb-36">
+      <PullIndicator {...pullState} />
       {error && <ErrorBanner message={error} onRetry={reload} retrying={reloading} note={devices.length ? "Showing the last saved data." : null} />}
 
       {!loading && devices.length > 0 && (
         <div className="mt-4 grid grid-cols-3 gap-2" data-testid="fleet-summary">
-          <SummaryTile icon={<Wifi className="h-3.5 w-3.5" />} label="Online" value={`${onlineCount}/${devices.length}`} tone="#39B54A" testid="summary-online" />
-          <SummaryTile icon={<WifiOff className="h-3.5 w-3.5" />} label="Offline" value={offlineCount} tone={offlineCount ? "#E36361" : "rgba(255,255,255,0.7)"} testid="summary-offline" />
+          <SummaryTile icon={<Wifi className="h-3.5 w-3.5" />} label="Online" value={`${onlineCount}/${devices.length}`} tone="#39B54A" onClick={() => toggleFilter("online")} selected={filter === "online"} testid="summary-online" />
+          <SummaryTile icon={<WifiOff className="h-3.5 w-3.5" />} label="Offline" value={offlineCount} tone={offlineCount ? "#E36361" : "rgba(255,255,255,0.7)"} onClick={() => toggleFilter("offline")} selected={filter === "offline"} testid="summary-offline" />
           <SummaryTile icon={<AlertTriangle className="h-3.5 w-3.5" />} label="Alarms" value={alarms.length} tone={alarms.length ? "#E5B23B" : "rgba(255,255,255,0.7)"} onClick={onOpenAlarms} testid="summary-alarms" />
         </div>
       )}
 
-      <SpotlightBanner />
-
-      <div className="mt-8">
-        <div className="text-white font-display text-lg font-bold">Your Devices</div>
-        <div className="text-xs text-white/60 mt-0.5">Tap a device to view live readings</div>
+      <div className="mt-6 flex items-end justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-white font-display text-lg font-bold">{filter === "online" ? "Online devices" : filter === "offline" ? "Offline devices" : "Your Devices"}</div>
+          <div className="text-xs text-white/65 mt-0.5">{filter ? `${shown.length} of ${devices.length} devices` : "Tap a device to view live readings"}</div>
+        </div>
+        {filter && <button onClick={() => setFilter(null)} className="min-h-[44px] px-2 -mr-2 text-sm text-[#39B54A] font-semibold flex-shrink-0" data-testid="btn-clear-filter">Show all</button>}
       </div>
       <div className="mt-4 space-y-3" data-testid="devices-list">
         {loading ? (
@@ -126,9 +135,15 @@ export default function Home({ onOpenDevice, onAddDevice, onOpenAlarms, pollResu
             />
           )
         ) : (
-          devices.map((device) => <DeviceCard key={device.id} device={device} readings={readings[device.id] || {}} onOpen={onOpenDevice} />)
+          shown.length === 0 ? (
+            <div className="surface p-6 text-center text-sm text-white/65" data-testid="filter-empty">{filter === "offline" ? "All devices are online." : "No devices are online right now."}</div>
+          ) : (
+            shown.map((device) => <DeviceCard key={device.id} device={device} readings={readings[device.id] || {}} onOpen={onOpenDevice} />)
+          )
         )}
       </div>
+
+      <SpotlightBanner />
     </div>
   );
 }

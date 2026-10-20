@@ -9,18 +9,19 @@ import { authApi } from "@/lib/telemetry";
 
 const Field = ({ label, htmlFor, children }) => (
   <div>
-    <label htmlFor={htmlFor} className="block text-[11px] uppercase tracking-[0.2em] text-white/60">{label}</label>
+    <label htmlFor={htmlFor} className="block text-xs uppercase tracking-[0.2em] text-white/60">{label}</label>
     <div className="mt-1">{children}</div>
   </div>
 );
 
-const OtpDots = ({ value, onChange, disabled }) => {
+const OtpDots = ({ value, onChange, disabled, inputRef }) => {
   const digits = value.split("");
   const filled = digits.length;
   return (
     <div className="relative">
       <input
         id="otp"
+        ref={inputRef}
         inputMode="numeric"
         autoComplete="one-time-code"
         aria-label="6-digit verification code"
@@ -60,10 +61,10 @@ const RegisterToggle = ({ showRegister, onToggle, disabled }) => (
 
 // digits = valid national number lengths, without the leading 0
 const COUNTRY_CODES = [
-  { code: "+91", label: "IN +91", digits: [10] },
-  { code: "+1", label: "US +1", digits: [10] },
-  { code: "+44", label: "UK +44", digits: [10] },
-  { code: "+971", label: "AE +971", digits: [9] },
+  { code: "+91", short: "IN +91", name: "India", digits: [10] },
+  { code: "+1", short: "US +1", name: "United States", digits: [10] },
+  { code: "+44", short: "UK +44", name: "United Kingdom", digits: [10] },
+  { code: "+971", short: "AE +971", name: "United Arab Emirates", digits: [9] },
 ];
 
 const RESEND_SECONDS = 30;
@@ -100,6 +101,9 @@ export default function Auth({ onAuthed }) {
 
   const [resendIn, setResendIn] = useState(0);
   const phoneInputRef = useRef(null);
+  const otpInputRef = useRef(null);
+  // The last code auto-submitted, so a failed attempt is not retried in a loop.
+  const autoSubmitted = useRef("");
 
   // Digits only, without a trunk-prefix 0 (e.g. "098765 43210" -> "9876543210").
   const phoneDigits = useMemo(() => phone.replace(/\D/g, "").replace(/^0+/, ""), [phone]);
@@ -263,6 +267,7 @@ export default function Auth({ onAuthed }) {
       const errorMessage = String(error?.code || error?.message || "");
       if (/invalid-verification-code|invalid.*verification code|verification code.*invalid|invalid code/i.test(errorMessage)) {
         toast.error("That code is incorrect. Please check it and try again.");
+        setOtp("");
       } else if (/session-expired|code-expired/i.test(errorMessage)) {
         toast.error("This code has expired. Request a new one.");
       } else {
@@ -276,6 +281,7 @@ export default function Auth({ onAuthed }) {
   }, [otp, otpSent, verificationId, onAuthed, fullPhone, name, showRegister, validateFields]);
 
   const resetOtp = () => {
+    autoSubmitted.current = "";
     setOtp("");
     setOtpSent(false);
     setVerificationId("");
@@ -289,6 +295,27 @@ export default function Auth({ onAuthed }) {
 
   const busy = sending || submitting;
   const canSubmit = otpSent && otp.length === 6 && !busy;
+
+  // Once the code is sent, put the cursor in the code field so the keyboard
+  // is already up (and Android can offer the SMS code as a suggestion).
+  useEffect(() => {
+    if (otpSent && !busy && !otp) otpInputRef.current?.focus();
+  }, [otpSent, busy, otp]);
+
+  // Submit as soon as the 6th digit is entered.
+  useEffect(() => {
+    if (canSubmit && autoSubmitted.current !== otp) {
+      autoSubmitted.current = otp;
+      submit();
+    }
+  }, [canSubmit, otp, submit]);
+
+  const onEnter = (action) => (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      action();
+    }
+  };
   const sendLabel = otpSent ? (resendIn > 0 ? `Resend in ${resendIn}s` : "Resend code") : "Send code";
 
   return (
@@ -304,16 +331,19 @@ export default function Auth({ onAuthed }) {
         <div className="space-y-4 sm:space-y-5">
           {showRegister && (
             <Field label="Full Name" htmlFor="full-name">
-              <input id="full-name" type="text" autoComplete="name" className="input-clean w-full" placeholder="Alex Brown" value={name} disabled={busy || otpSent} onChange={(e) => setName(e.target.value)} data-testid="input-fullname" />
+              <input id="full-name" type="text" autoComplete="name" className="input-clean w-full" placeholder="Alex Brown" value={name} disabled={busy || otpSent} enterKeyHint="next" onKeyDown={onEnter(() => phoneInputRef.current?.focus())} onChange={(e) => setName(e.target.value)} data-testid="input-fullname" />
             </Field>
           )}
 
           <div className="grid grid-cols-[96px_minmax(0,1fr)] sm:grid-cols-[96px_minmax(0,1fr)_auto] gap-2.5 items-end">
             <Field label="Country" htmlFor="country-code">
               <div className="relative">
+                <div className="input-clean w-full h-10 flex items-center pl-1 pr-6 text-sm font-semibold text-white pointer-events-none" aria-hidden="true" style={{ opacity: busy || otpSent ? 0.5 : 1 }}>
+                  {COUNTRY_CODES.find((c) => c.code === countryCode)?.short || countryCode}
+                </div>
                 <select
                   id="country-code"
-                  className="input-clean w-full h-10 bg-transparent text-white border-b border-white/14 focus:border-[#39B54A] transition-colors cursor-pointer appearance-none pl-1 pr-6 text-sm font-semibold"
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer appearance-none"
                   value={countryCode}
                   disabled={busy || otpSent}
                   onChange={(e) => { setCountryCode(e.target.value); resetOtp(); }}
@@ -321,7 +351,7 @@ export default function Auth({ onAuthed }) {
                 >
                   {COUNTRY_CODES.map((c) => (
                     <option key={c.code} value={c.code} className="bg-[#080F0B] text-white">
-                      {c.label}
+                      {c.name} ({c.code})
                     </option>
                   ))}
                 </select>
@@ -329,7 +359,7 @@ export default function Auth({ onAuthed }) {
               </div>
             </Field>
             <Field label="Phone Number" htmlFor="phone">
-              <input id="phone" ref={phoneInputRef} type="tel" inputMode="tel" autoComplete="tel-national" maxLength={16} className="input-clean w-full" placeholder="98765 43210" value={phone} disabled={busy || otpSent} onChange={(e) => { setPhone(e.target.value.replace(/[^\d\s-]/g, "")); resetOtp(); }} data-testid="input-phone" />
+              <input id="phone" ref={phoneInputRef} type="tel" inputMode="tel" autoComplete="tel-national" maxLength={16} className="input-clean w-full" placeholder="98765 43210" value={phone} disabled={busy || otpSent} enterKeyHint="send" onKeyDown={onEnter(dispatchOTP)} onChange={(e) => { setPhone(e.target.value.replace(/[^\d\s-]/g, "")); resetOtp(); }} data-testid="input-phone" />
             </Field>
             <button onClick={dispatchOTP} disabled={busy || resendIn > 0} className="col-span-2 sm:col-span-1 justify-self-end h-11 px-4 rounded-full bg-[#39B54A]/12 border border-[#39B54A]/40 text-[#39B54A] text-sm font-semibold hover:bg-[#39B54A]/20 transition-colors mb-0.5 disabled:opacity-50 whitespace-nowrap" data-testid="btn-dispatch-otp">
               {sending ? <span className="flex items-center gap-1.5"><LoaderCircle className="h-3.5 w-3.5 animate-spin" />Sending...</span> : sendLabel}
@@ -344,7 +374,7 @@ export default function Auth({ onAuthed }) {
           )}
 
           <Field label="Verification Code" htmlFor="otp">
-            <OtpDots value={otp} onChange={setOtp} disabled={busy || !otpSent} />
+            <OtpDots value={otp} onChange={setOtp} disabled={busy || !otpSent} inputRef={otpInputRef} />
           </Field>
         </div>
 
